@@ -1,0 +1,8 @@
+git
+workflow-aggregator
+github
+configuration-as-code
+credentials
+plain-credentials
+credentials-binding
+job-dsl
