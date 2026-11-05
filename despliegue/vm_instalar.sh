@@ -39,7 +39,6 @@ echo "GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo local)" >> .env
 # 4. servicios (la primera vez construye las imagenes: unos 10 minutos)
 $D compose up -d --build --wait mongo dask-scheduler dask-worker spark-master spark-worker api
 $D compose --profile ngrok up -d ngrok   # la URL publica ya responde (con 0 datos hasta que termine la carga)
-$D compose up -d --build --wait jenkins
 
 # 5. datos y jobs de Spark, en segundo plano (en una VM de 2 nucleos tardan alrededor de 1 hora)
 cat > carga.sh <<'EOF'
@@ -49,6 +48,7 @@ for job in sentimiento tasas_mapreduce balanceo; do
   sudo docker compose exec -T spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
     --conf spark.driver.host=spark-master --driver-memory 1g --executor-memory 1800m /opt/jobs/$job.py
 done
+sudo docker compose up -d --build --wait jenkins   # Jenkins al final: su primer build redespliega y mataria una carga en curso
 echo CARGA_TERMINADA
 EOF
 nohup bash carga.sh > carga.log 2>&1 &
