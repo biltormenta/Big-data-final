@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeMap: mapa</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body { height: 100%; margin: 0; font-family: system-ui, Segoe UI, sans-serif; }
+  #mapa { height: 100%; }
+  .panel { position: absolute; z-index: 1000; background: #fff; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,.3);
+           padding: 10px 12px; font-size: 13px; line-height: 1.35; }
+  #controles { top: 10px; right: 10px; width: 250px; }
+  #resumen { bottom: 24px; right: 10px; width: 250px; }
+  #leyenda { bottom: 24px; left: 10px; }
+  .panel h3 { margin: 0 0 6px; font-size: 14px; }
+  .panel label { display: block; margin-top: 6px; }
+  .panel input, .panel select { width: 100%; box-sizing: border-box; }
+  .caja { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border: 1px solid #666; }
+  .peque { color: #555; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="mapa"></div>
+
+<div class="panel" id="controles">
+  <h3>LifeMap · Philadelphia + Restaurants</h3>
+  <div class="peque">Haga clic en el mapa para ver los negocios cercanos y el resumen de la zona.</div>
+  <label>Radio (metros) <input id="radio" type="number" min="50" max="5000" value="500"></label>
+  <label>Categoría (opcional) <input id="categoria" placeholder="Pizza, Chinese, Italian..."></label>
+  <label>Mínimo de días-negocio para pintar una celda <input id="mindias" type="number" min="0" value="100000"></label>
+  <div class="peque" style="margin-top:6px">Las celdas grises no llegan al mínimo: su tasa no es comparable.</div>
+</div>
+
+<div class="panel" id="resumen"><h3>Resumen de la zona</h3><div class="peque">Sin selección todavía.</div></div>
+
+<div class="panel" id="leyenda">
+  <h3>Tasa de cierre anual por celda</h3>
+  <div><span class="caja" style="background:#ffffb2"></span>menos de 3 %</div>
+  <div><span class="caja" style="background:#fecc5c"></span>3 a 4,5 %</div>
+  <div><span class="caja" style="background:#fd8d3c"></span>4,5 a 6 %</div>
+  <div><span class="caja" style="background:#e31a1c"></span>6 a 8 %</div>
+  <div><span class="caja" style="background:#800026"></span>más de 8 %</div>
+  <div><span class="caja" style="background:#ccc"></span>no cumple el mínimo</div>
+  <div style="margin-top:6px"><span class="caja" style="background:#d7301f;border-radius:7px"></span>negocio cerrado</div>
+  <div><span class="caja" style="background:#1a9850;border-radius:7px"></span>negocio abierto</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const mapa = L.map("mapa").setView([39.9526, -75.1652], 10);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: "© OpenStreetMap"}).addTo(mapa);
+
+const capaCeldas = L.layerGroup().addTo(mapa);
+const capaNegocios = L.layerGroup().addTo(mapa);
+let circulo = null;
+
+function color(t) {
+  return t > 8 ? "#800026" : t > 6 ? "#e31a1c" : t > 4.5 ? "#fd8d3c" : t > 3 ? "#fecc5c" : "#ffffb2";
+}
+
+// celdas de geohash con su tasa de cierre (viene de /stats/closure?por=celda, calculada con reduceByKey)
+async function cargarCeldas() {
+  capaCeldas.clearLayers();
+  const min = document.getElementById("mindias").value || 0;
+  const r = await fetch(`/stats/closure?por=celda&min_dias=0&limit=5000`);
+  const j = await r.json();
+  j.resultados.forEach(c => {
+    const ok = c.dias_negocio >= Number(min);
+    const anillo = c.geom.coordinates[0].map(p => [p[1], p[0]]);  // geojson va [lon, lat], leaflet [lat, lon]
+    L.polygon(anillo, {color: "#555", weight: 1, fillOpacity: ok ? 0.55 : 0.25, fillColor: ok ? color(c.tasa_cierre_pct) : "#ccc",
+                       dashArray: ok ? null : "4"})
+      .bindTooltip(`<b>Celda ${c.celda}</b><br>${c.negocios} negocios, ${c.cierres} cierres<br>` +
+                   `Tasa: ${c.tasa_cierre_pct.toFixed(2)} % anual (IC ${c.ic95_inf.toFixed(1)}–${c.ic95_sup.toFixed(1)})<br>` +
+                   `Reseñas negativas: ${c.pct_negativas} %<br>${ok ? "" : "<i>no cumple el mínimo de días-negocio</i>"}`, {sticky: true})
+      .addTo(capaCeldas);
+  });
+}
+
+// clic: negocios cercanos ($near) y resumen de la zona ($geoNear)
+mapa.on("click", async e => {
+  const radio = document.getElementById("radio").value || 500;
+  const cat = document.getElementById("categoria").value.trim();
+  const q = `lat=${e.latlng.lat}&lon=${e.latlng.lng}&radio=${radio}` + (cat ? `&categoria=${encodeURIComponent(cat)}` : "");
+  if (circulo) mapa.removeLayer(circulo);
+  circulo = L.circle(e.latlng, {radius: Number(radio), color: "#2878d6", weight: 2, fillOpacity: 0.05}).addTo(mapa);
+  capaNegocios.clearLayers();
+
+  const [near, zona] = await Promise.all([
+    fetch(`/businesses/near?${q}&limit=300`).then(r => r.json()),
+    fetch(`/zones/summary?${q}&min_dias=${document.getElementById("mindias").value || 0}`).then(r => r.json())]);
+
+  if (near.error || zona.error) {
+    document.getElementById("resumen").innerHTML = `<h3>Resumen de la zona</h3><div class="peque">${near.error || zona.error}</div>`;
+    return;
+  }
+  near.features.forEach(f => {
+    const p = f.properties, abierto = p.is_open === 1;
+    L.circleMarker([f.geometry.coordinates[1], f.geometry.coordinates[0]],
+      {radius: 6, color: "#333", weight: 1, fillColor: abierto ? "#1a9850" : "#d7301f", fillOpacity: 0.9})
+      .bindPopup(`<b>${p.name}</b><br>${p.categoria_principal} · ${p.stars} ★<br>` +
+                 `${abierto ? "Abierto (censurado)" : "Cerrado"} · vida ${p.vida.dias_negocio} días<br>` +
+                 `${p.resenas.n} reseñas, ${p.resenas.pct_negativas} % negativas`).addTo(capaNegocios);
+  });
+  const f = v => (v === null || v === undefined) ? "—" : v;
+  document.getElementById("resumen").innerHTML = `<h3>Resumen de la zona</h3>
+    <div>${zona.negocios} negocios · ${zona.resenas} reseñas</div>
+    <div>Sentimiento medio: <b>${f(zona.sentimiento_medio)}</b> <span class="peque">(−1 a +1)</span></div>
+    <div>Reseñas negativas: <b>${f(zona.pct_negativas)} %</b></div>
+    <div>Cierres: <b>${zona.cierres}</b> en ${zona.dias_negocio} días-negocio</div>
+    <div>Tasa de cierre: <b>${f(zona.tasa_cierre_pct)} % anual</b>${zona.confiable ? "" : " <span class='peque'>(pocos datos: no confiable)</span>"}</div>`;
+});
+
+document.getElementById("mindias").addEventListener("change", cargarCeldas);
+cargarCeldas();
+</script>
+</body>
+</html>

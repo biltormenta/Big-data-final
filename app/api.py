@@ -2,7 +2,7 @@ import os
 import threading
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
@@ -33,10 +33,16 @@ def error_mongo(e):
     return jsonify(error=f"mongo rechazo la consulta: {e.details.get('errmsg', str(e))}"), 400
 
 
+# mapa interactivo (leaflet): usa los mismos endpoints de abajo, desde el navegador
+@app.get("/mapa")
+def mapa():
+    return render_template("mapa.html")
+
+
 @app.get("/")
 def indice():
     return jsonify(proyecto="LifeMap", area=config.AREA_NOMBRE, familia=config.FAMILIA, commit=config.GIT_COMMIT,
-                   endpoints=["/health", "/businesses/near", "/businesses/within", "/zones/summary",
+                   mapa="/mapa", endpoints=["/health", "/businesses/near", "/businesses/within", "/zones/summary",
                               "/stats/closure", "/predict"])
 
 

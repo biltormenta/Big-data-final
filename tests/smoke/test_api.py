@@ -54,6 +54,11 @@ def test_ping_y_health_informan_cada_servicio():
     assert j["commit"]
 
 
+def test_mapa_se_sirve():
+    r = requests.get(f"{API}/mapa")
+    assert r.status_code == 200 and "leaflet" in r.text.lower()
+
+
 def test_cercanos_por_radio_y_categoria():
     r = requests.get(f"{API}/businesses/near", params={"lat": LAT0, "lon": LON0, "radio": 200})
     assert r.status_code == 200 and r.json()["count"] == len(CERCA)
