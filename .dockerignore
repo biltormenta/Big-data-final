@@ -1,0 +1,7 @@
+.git
+.env
+datos_locales
+__pycache__
+.pytest_cache
+informe
+resultados
