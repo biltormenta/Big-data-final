@@ -1,0 +1,222 @@
+# LifeMap, entrega 1: un solo comando levanta todo -> docker compose up -d --build --wait
+# "name" fija el nombre del proyecto: jenkins y la terminal manejan los mismos contenedores
+name: lifemap
+
+# imagen de python para dask, la ingesta y las pruebas unitarias
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/app.Dockerfile
+  image: lifemap-app:latest
+  restart: unless-stopped
+  environment:
+    MONGO_URI: mongodb://mongo:27017
+    MONGO_DB: lifemap
+    DASK_SCHEDULER: tcp://dask-scheduler:8786
+    DATOS_DIR: /data
+  volumes:
+    - datos:/data
+
+# imagen de spark (con el conector de mongo); tambien corre la api flask
+x-spark: &spark
+  build:
+    context: .
+    dockerfile: docker/spark.Dockerfile
+    args:
+      GIT_COMMIT: ${GIT_COMMIT:-local}
+  image: lifemap-spark:latest
+  restart: unless-stopped
+  user: root
+  environment:
+    MONGO_URI: mongodb://mongo:27017
+    MONGO_DB: lifemap
+    DATOS_DIR: /data
+    GIT_COMMIT: ${GIT_COMMIT:-local}
+  volumes:
+    - datos:/data
+
+services:
+  # base de datos: negocios como GeoJSON (indice 2dsphere), resenas y resultados de spark
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    volumes:
+      - mongo_datos:/data/db
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.6"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits: {memory: 1400m}
+
+  # dask: el scheduler reparte tareas (dashboard en el 8787) y 2 workers las ejecutan
+  dask-scheduler:
+    <<: *app
+    command: ["dask", "scheduler", "--port", "8786", "--dashboard-address", ":8787"]
+    ports: ["8787:8787"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8787/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dask-worker:
+    <<: *app
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "1", "--memory-limit", "1100MB",
+              "--dashboard-address", ":8788"]
+    depends_on:
+      dask-scheduler: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8788/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      replicas: 2  # "al menos dos workers" que pide el taller
+      resources:
+        limits: {memory: 1400m}
+
+  # spark: un maestro (interfaz web en el 8081; aqui corre tambien el driver de los jobs) y un worker
+  spark-master:
+    <<: *spark
+    hostname: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master"]
+    ports: ["8081:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/json/ > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits: {memory: 2g}
+
+  spark-worker:
+    <<: *spark
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077",
+              "--cores", "2", "--memory", "2g"]
+    depends_on:
+      spark-master: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8081/json/ > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits: {memory: 2700m}
+
+  # api flask (gunicorn). Un solo proceso con hilos: /predict carga el modelo de spark en memoria
+  api:
+    <<: *spark
+    command: ["gunicorn", "-b", "0.0.0.0:5000", "-w", "1", "--threads", "4", "--timeout", "180", "app.api:app"]
+    ports: ["5000:5000"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: lifemap
+      DATOS_DIR: /data
+      GIT_COMMIT: ${GIT_COMMIT:-local}
+      SPARK_MASTER_URL: http://spark-master:8080
+      DASK_SCHEDULER_URL: http://dask-scheduler:8787
+    depends_on:
+      mongo: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits: {memory: 1g}
+
+  # job de una sola vez: descarga de kaggle + limpieza con dask + carga a mongo (profile "jobs")
+  ingesta:
+    <<: *app
+    command: ["python", "-m", "app.ingesta"]
+    restart: "no"
+    profiles: ["jobs"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: lifemap
+      DASK_SCHEDULER: tcp://dask-scheduler:8786
+      DATOS_DIR: /data
+      ZIP_LOCAL_DIR: /zip
+      PYTHONUNBUFFERED: "1"
+      # credenciales opcionales de kaggle: vienen del .env o de jenkins, nunca del repositorio
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+    volumes:
+      - datos:/data
+      # si ya tienes yelp-dataset.zip en tu pc, apunta YELP_ZIP_DIR a su carpeta y no se vuelve a bajar
+      - ${YELP_ZIP_DIR:-./datos_locales}:/zip
+    depends_on:
+      mongo: {condition: service_healthy}
+      dask-worker: {condition: service_healthy}
+
+  # pruebas de humo contra la api (las usa jenkins)
+  pruebas-api:
+    <<: *app
+    command: ["pytest", "tests/smoke", "-v"]
+    restart: "no"
+    profiles: ["tests"]
+    environment:
+      API_URL: http://api:5000
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: lifemap
+    depends_on:
+      api: {condition: service_healthy}
+
+  # jenkins con imagen propia. Se monta el socket de docker para construir y levantar contenedores
+  jenkins:
+    build:
+      context: docker/jenkins
+    image: lifemap-jenkins:latest
+    restart: unless-stopped
+    user: root
+    ports: ["8080:8080", "50000:50000"]
+    environment:
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin}
+      REPO_URL: ${REPO_URL:-https://github.com/USUARIO/lifemap.git}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/login > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        limits: {memory: 1g}
+
+  # url publica ESTABLE con ngrok (profile "ngrok"): una cuenta gratis da un dominio fijo (xxxx.ngrok-free.dev)
+  # el token y el dominio van en el .env, nunca en el repositorio. Arranque: docker compose --profile ngrok up -d ngrok
+  ngrok:
+    image: ngrok/ngrok:latest
+    command: ["http", "--url=${NGROK_DOMAIN:-}", "api:5000"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    profiles: ["ngrok"]
+    restart: unless-stopped
+    depends_on:
+      api: {condition: service_healthy}
+
+  # alternativa sin cuenta (profile "tunel"): docker compose --profile tunel up -d tunel
+  # la url sale en los logs: docker compose logs tunel. Con el tunel rapido la url cambia cada vez que se reinicia
+  tunel:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--url", "http://api:5000"]
+    profiles: ["tunel"]
+    depends_on:
+      api: {condition: service_healthy}
+
+volumes:
+  datos:
+  mongo_datos:
+  jenkins_home:

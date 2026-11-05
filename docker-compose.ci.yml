@@ -1,0 +1,8 @@
+# override que usa jenkins para la pila de pruebas (proyecto lifemap-ci):
+# no publica puertos fijos para no chocar con el despliegue real
+# se combina con el compose principal: -f docker-compose.yml -f docker-compose.ci.yml
+services:
+  mongo:
+    ports: !override []
+  api:
+    ports: !override []
