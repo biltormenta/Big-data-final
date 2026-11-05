@@ -1,0 +1,56 @@
+# configuracion de jenkins como codigo (JCasC): se aplica sola cada vez que arranca el contenedor
+jenkins:
+  systemMessage: "Jenkins de LifeMap (configurado con JCasC)"
+  numExecutors: 2
+  # un unico usuario "admin"; su contraseña sale de la variable de entorno (archivo .env), no del repo
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  # sin sesion iniciada no se ve nada
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+# el token de kaggle vive aqui como credencial; viene del entorno del contenedor y no esta en el repo
+# (el dataset es publico: si no hay credenciales quedan vacias y el pipeline funciona igual)
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "kaggle-username"
+              secret: "${KAGGLE_USERNAME:-}"
+              description: "usuario de kaggle (opcional)"
+          - string:
+              scope: GLOBAL
+              id: "kaggle-key"
+              secret: "${KAGGLE_KEY:-}"
+              description: "token de la api de kaggle (opcional)"
+
+# job del pipeline creado con Job DSL (el script es un bloque YAML plegado: NO se pueden poner comentarios adentro).
+# Lee el repo de REPO_URL, rama main, ejecuta el Jenkinsfile de la raiz. Se dispara con el webhook de GitHub (githubPush)
+# y, como respaldo si el webhook no llega (jenkins no alcanzable desde internet), con pollSCM cada 2 minutos
+jobs:
+  - script: >
+      pipelineJob('lifemap') {
+        description('Pipeline del repo: build, pytest, pruebas contra la api y despliegue')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url(System.getenv('REPO_URL')) }
+                branches('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers {
+          githubPush()
+          scm('H/2 * * * *')
+        }
+      }
