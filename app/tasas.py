@@ -1,7 +1,7 @@
 from datetime import datetime
 
 # misma formula de la AFR del ejercicio de discos, con dias-negocio en lugar de dias-disco
-DIAS_ANIO = 360
+DIAS_ANIO = 365
 
 
 def tasa_cierre(cierres, dias_negocio):
