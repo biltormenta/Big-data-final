@@ -1,5 +1,7 @@
 import os
+import socket
 import threading
+from datetime import datetime
 
 import requests
 from flask import Flask, jsonify, render_template, request
@@ -43,7 +45,8 @@ def mapa():
 def indice():
     return jsonify(proyecto="LifeMap", area=config.AREA_NOMBRE, familia=config.FAMILIA, commit=config.GIT_COMMIT,
                    mapa="/mapa", endpoints=["/health", "/businesses/near", "/businesses/within", "/zones/summary",
-                              "/stats/closure", "/predict"])
+                              "/stats/closure", "/predict", "/live/hotspots", "/alerts", "/survival/<categoria>", "/risk/near",
+                              "/live/evolucion", "/live/estado"], dashboard="/dashboard")
 
 
 # liveness barato: lo usa el healthcheck del compose (no depende de los otros servicios)
@@ -59,6 +62,29 @@ def _estado_http(url, validar):
         return validar(r)
     except Exception as e:
         return {"estado": "caido", "detalle": str(e)[:120]}
+
+
+def _estado_kafka():
+    """Kafka responde si el puerto del broker acepta conexiones."""
+    host, _, puerto = config.KAFKA_SERVIDOR.partition(":")
+    try:
+        socket.create_connection((host, int(puerto or 9092)), timeout=2).close()
+        return {"estado": "ok", "servidor": config.KAFKA_SERVIDOR}
+    except OSError as e:
+        return {"estado": "caido", "servidor": config.KAFKA_SERVIDOR, "detalle": str(e)[:80]}
+
+
+def _estado_consumidor():
+    """El job de streaming deja un latido en mongo cada 5 s; si el ultimo es viejo, esta detenido."""
+    d = db()[config.COL_METRICAS].find_one({"_id": "streaming"})
+    if d is None:
+        return {"estado": "sin_iniciar"}
+    edad = (datetime.utcnow() - d["actualizado_en"]).total_seconds()
+    if edad > 60:
+        return {"estado": "detenido", "ultimo_latido_hace_s": round(edad)}
+    return {"estado": "ok", "retraso_mensajes": d.get("retraso"), "resenas_procesadas": d.get("resenas_procesadas"),
+            "ultima_fecha_evento": d["ultima_fecha_evento"].isoformat() if d.get("ultima_fecha_evento") else None,
+            "filas_por_seg": d.get("filas_por_seg")}
 
 
 @app.get("/health")
@@ -81,9 +107,12 @@ def health():
 
     servicios["spark"] = _estado_http(config.SPARK_MASTER_URL + "/json/", spark)
     servicios["dask"] = _estado_http(config.DASK_SCHEDULER_URL + "/health", dask)
+    servicios["kafka"] = _estado_kafka()
+    servicios["consumidor"] = _estado_consumidor()
     servicios["api"] = {"estado": "ok"}
     servicios["modelo_sentimiento"] = {"estado": "ok" if os.path.isdir(config.RUTA_MODELO) else "sin_entrenar"}
-    ok = all(s["estado"] == "ok" for k, s in servicios.items() if k != "modelo_sentimiento")
+    # el consumidor (streaming) es opcional: detenido no tumba el estado general, pero se informa con su retraso
+    ok = all(s["estado"] == "ok" for k, s in servicios.items() if k not in ("modelo_sentimiento", "consumidor"))
     # 503 si algun servicio esta caido: los sistemas de monitoreo lo detectan sin leer el cuerpo
     return jsonify(status="ok" if ok else "degradado", commit=config.GIT_COMMIT, servicios=servicios), (200 if ok else 503)
 
@@ -130,6 +159,89 @@ def cierres():
     limite = consultas.validar_limite(request.args.get("limit"), defecto=20)
     filas = consultas.tasas_guardadas(db(), por, min_dias, limite)
     return jsonify(por=por, min_dias=min_dias, count=len(filas), resultados=filas)
+
+
+# ---------------- entrega 2: streaming, supervivencia y riesgo ----------------
+@app.get("/live/hotspots")
+def live_hotspots():
+    """Celdas de una ventana de 30 dias cuyo % de resenas negativas subio mas del umbral (hotspots)."""
+    inicio = consultas.validar_fecha(request.args.get("ventana"))
+    zona = consultas.punto_opcional(request.args)
+    todas = request.args.get("todas") == "1"
+    limite = consultas.validar_limite(request.args.get("limit"), defecto=500)
+    inicio, docs = consultas.hotspots(db(), inicio, zona, todas, limite)
+    if inicio is None:
+        return jsonify(type="FeatureCollection", count=0, ventana=None, features=[])
+    feats = [consultas.ventana_a_feature(d) for d in docs]
+    return jsonify(type="FeatureCollection", count=len(feats), ventana=inicio.isoformat(), todas=todas, features=feats)
+
+
+@app.route("/alerts", methods=["GET", "POST"])
+def alertas():
+    """Alertas de riesgo de cierre generadas por el streaming: por radio (GET) o dentro de un poligono (POST)."""
+    min_prob = consultas.validar_prob(request.args.get("min_prob"))
+    limite = consultas.validar_limite(request.args.get("limit"), defecto=100)
+    zona = poligono = None
+    if request.method == "POST":
+        cuerpo = request.get_json(silent=True)
+        if cuerpo is None:
+            raise ParametroInvalido("el cuerpo debe ser un JSON con el poligono GeoJSON")
+        poligono = consultas.validar_poligono(cuerpo)
+    else:
+        zona = consultas.punto_opcional(request.args)
+    docs = consultas.alertas(db(), zona, poligono, min_prob, request.args.get("todas") != "1", limite)
+    return jsonify(consultas.coleccion_fc(docs))
+
+
+@app.get("/survival")
+def supervivencia_lista():
+    """Que curvas hay (categorias y zonas) y cuales se pueden interpretar."""
+    campos = {"_id": 0, "tipo": 1, "clave": 1, "negocios": 1, "cierres": 1, "mediana_dias": 1, "s_1a": 1, "s_3a": 1, "s_5a": 1, "pequeno": 1}
+    docs = list(db()[config.COL_SUPERVIVENCIA].find({}, campos).sort("negocios", -1))
+    return jsonify(count=len(docs), grupos=docs)
+
+
+@app.get("/survival/<categoria>")
+def supervivencia(categoria):
+    """Curva de Kaplan-Meier de una categoria principal (TODAS = todos los negocios) o, con ?zona=<geohash>, de una zona."""
+    zona = request.args.get("zona")
+    clave = f"zona|{zona}" if zona else f"categoria|{categoria}"
+    d = db()[config.COL_SUPERVIVENCIA].find_one({"_id": clave}, {"_id": 0, "geom": 0})
+    if d is None:
+        return jsonify(error=f"no hay curva para {clave} (grupo con menos de 30 negocios o nombre inexistente)"), 404
+    if d["pequeno"]:
+        d["aviso"] = "grupo pequeño: pocos negocios o pocos cierres; la curva no se interpreta"
+    return jsonify(d)
+
+
+@app.get("/risk/near")
+def riesgo_cerca():
+    """Negocios activos cerca de un punto con su probabilidad de cierre (la mas alta primero)."""
+    lat, lon = consultas.validar_punto(request.args.get("lat"), request.args.get("lon"))
+    radio = consultas.validar_radio(request.args.get("radio"))
+    min_prob = consultas.validar_prob(request.args.get("min_prob"))
+    limite = consultas.validar_limite(request.args.get("limit"), defecto=50)
+    docs = consultas.riesgo_cercano(db(), lat, lon, radio, min_prob, limite)
+    return jsonify(consultas.coleccion_fc(docs))
+
+
+@app.get("/live/evolucion")
+def live_evolucion():
+    return jsonify(ventanas=consultas.a_json(consultas.evolucion(db())))
+
+
+@app.get("/live/estado")
+def live_estado():
+    d = db()[config.COL_METRICAS].find_one({"_id": "streaming"}, {"_id": 0})
+    modelo = db()[config.COL_METRICAS].find_one({"_id": "modelo_cargado"}, {"_id": 0})
+    return jsonify(streaming=consultas.a_json(d), modelos=consultas.a_json(modelo), consumidor=_estado_consumidor(),
+                   alertas_activas=db()[config.COL_ALERTAS].count_documents({"activa": True}),
+                   resenas_clasificadas=db()[config.COL_RESENAS_STREAM].estimated_document_count())
+
+
+@app.get("/dashboard")
+def dashboard():
+    return render_template("dashboard.html")
 
 
 def _cargar_modelo():

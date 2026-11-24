@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeMap: panel en vivo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --borde: #d8dde3; --fondo: #f4f6f8; --texto: #1c2733; --suave: #5b6b7a; --rojo: #d7301f; --azul: #2878d6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; background: var(--fondo); color: var(--texto); }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--borde); }
+  h1 { margin: 0; font-size: 22px; }
+  .estado { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--suave); }
+  .estado b { color: var(--texto); }
+  .punto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; background: #aaa; }
+  .punto.ok { background: #1a9850; }
+  .punto.mal { background: var(--rojo); }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; height: calc(100vh - 66px); min-height: 640px; }
+  section { background: #fff; border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; min-height: 0; }
+  h2 { margin: 0 0 8px; font-size: 16px; }
+  .nota { font-size: 12px; color: var(--suave); margin: 4px 0 0; }
+  #mapa { flex: 1; min-height: 200px; border-radius: 6px; }
+  .grafica { flex: 1; position: relative; min-height: 0; }
+  .tabla { overflow: auto; flex: 1; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--borde); }
+  th { position: sticky; top: 0; background: #fff; color: var(--suave); font-weight: 600; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .barra { display: inline-block; height: 8px; background: var(--rojo); border-radius: 4px; vertical-align: middle; margin-right: 6px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } section { min-height: 360px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>LifeMap · panel en vivo</h1>
+  <div class="estado">
+    <span><span class="punto" id="luz"></span>Streaming: <b id="e-estado">…</b></span>
+    <span>Reseñas clasificadas: <b id="e-resenas">…</b></span>
+    <span>Fecha del flujo: <b id="e-fecha">…</b></span>
+    <span>Retraso: <b id="e-retraso">…</b></span>
+    <span>Alertas activas: <b id="e-alertas">…</b></span>
+    <span>Modelos: <b id="e-modelos">…</b></span>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>Mapa de hotspots</h2>
+    <div id="mapa"></div>
+    <p class="nota" id="nota-mapa">Celdas pintadas por % de reseñas negativas en la ventana de 30 días más reciente; borde rojo grueso = hotspot; puntos = alertas.</p>
+  </section>
+
+  <section>
+    <h2>Alertas activas de cierre</h2>
+    <div class="tabla"><table>
+      <thead><tr><th>Negocio</th><th>Categoría</th><th>Riesgo</th><th>Fecha</th></tr></thead>
+      <tbody id="alertas"><tr><td colspan="4">Cargando…</td></tr></tbody>
+    </table></div>
+    <p class="nota">Probabilidad de cierre estimada por el modelo de riesgo; solo las que superan el umbral.</p>
+  </section>
+
+  <section>
+    <h2>Curvas de supervivencia (Kaplan-Meier)</h2>
+    <div class="grafica"><canvas id="g-super"></canvas></div>
+    <p class="nota">Eje x: días desde la primera reseña. Se dibuja solo donde hay al menos 30 negocios en riesgo; los grupos pequeños no se muestran.</p>
+  </section>
+
+  <section>
+    <h2>Evolución del % de reseñas negativas</h2>
+    <div class="grafica"><canvas id="g-evol"></canvas></div>
+    <p class="nota">Una barra por ventana de 30 días; la línea es el % negativo y las barras, cuántas celdas son hotspot.</p>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const api = p => fetch(p).then(r => r.json());
+const fmt = n => (n === null || n === undefined) ? "—" : Number(n).toLocaleString("es-CO");
+const fechaCorta = s => s ? s.slice(0, 10) : "—";
+
+const mapa = L.map("mapa").setView([39.9526, -75.1652], 9);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 18, attribution: "© OpenStreetMap"}).addTo(mapa);
+const capaCeldas = L.layerGroup().addTo(mapa), capaAlertas = L.layerGroup().addTo(mapa);
+const color = p => p > 40 ? "#800026" : p > 30 ? "#e31a1c" : p > 22 ? "#fd8d3c" : p > 15 ? "#fecc5c" : "#ffffb2";
+
+async function estado() {
+  const e = await api("/live/estado");
+  const c = e.consumidor || {};
+  document.getElementById("luz").className = "punto " + (c.estado === "ok" ? "ok" : "mal");
+  document.getElementById("e-estado").textContent = c.estado === "ok" ? "activo" : (c.estado || "sin datos");
+  document.getElementById("e-resenas").textContent = fmt(e.resenas_clasificadas);
+  document.getElementById("e-fecha").textContent = fechaCorta(c.ultima_fecha_evento);
+  document.getElementById("e-retraso").textContent = c.retraso_mensajes === null || c.retraso_mensajes === undefined ? "—" : fmt(c.retraso_mensajes) + " mensajes";
+  document.getElementById("e-alertas").textContent = fmt(e.alertas_activas);
+  const m = e.modelos;
+  document.getElementById("e-modelos").textContent = m ? `sentimiento ${m.sentimiento_version} · riesgo ${m.riesgo_version}` : "—";
+}
+
+async function hotspots() {
+  const h = await api("/live/hotspots?todas=1&limit=1000");
+  capaCeldas.clearLayers();
+  let calientes = 0;
+  h.features.forEach(f => {
+    const p = f.properties, anillo = f.geometry.coordinates[0].map(q => [q[1], q[0]]);
+    if (p.hotspot) calientes++;
+    L.polygon(anillo, {color: p.hotspot ? "#d7301f" : "#666", weight: p.hotspot ? 3 : 1, fillColor: color(p.pct_negativas), fillOpacity: 0.55})
+      .bindTooltip(`<b>Celda ${p.celda}</b><br>${p.n} reseñas · ${p.pct_negativas} % negativas` +
+                   (p.delta_pp === null || p.delta_pp === undefined ? "" : `<br>Cambio vs ventana anterior: ${p.delta_pp > 0 ? "+" : ""}${p.delta_pp} pp`) +
+                   (p.hotspot ? "<br><b>HOTSPOT</b>" : ""), {sticky: true}).addTo(capaCeldas);
+  });
+  document.getElementById("nota-mapa").textContent = h.ventana
+    ? `Ventana de 30 días desde ${fechaCorta(h.ventana)}: ${h.count} celdas, ${calientes} hotspots (borde rojo). Puntos rojos = negocios en alerta.`
+    : "Todavía no llegan reseñas: inicie el productor.";
+}
+
+async function alertas() {
+  const a = await api("/alerts?limit=300");
+  capaAlertas.clearLayers();
+  a.features.forEach(f => L.circleMarker([f.properties.lat, f.properties.lon], {radius: 4, color: "#7f0000", weight: 1, fillColor: "#d7301f", fillOpacity: 0.9})
+    .bindTooltip(`${f.properties.name} · riesgo ${(f.properties.prob * 100).toFixed(0)} %`).addTo(capaAlertas));
+  const cuerpo = document.getElementById("alertas");
+  if (!a.features.length) { cuerpo.innerHTML = '<tr><td colspan="4">Sin alertas activas todavía.</td></tr>'; return; }
+  cuerpo.innerHTML = a.features.slice(0, 40).map(f => {
+    const p = f.properties;
+    return `<tr><td>${p.name}</td><td>${p.categoria_principal}</td>` +
+           `<td class="num"><span class="barra" style="width:${Math.round(p.prob * 60)}px"></span>${(p.prob * 100).toFixed(0)} %</td><td>${fechaCorta(p.fecha)}</td></tr>`;
+  }).join("");
+}
+
+let gSuper = null, gEvol = null;
+const paleta = ["#2878d6", "#d7301f", "#1a9850", "#8e44ad", "#e67e22"];
+
+async function supervivencia() {
+  const lista = await api("/survival");
+  const elegidos = ["TODAS", ...lista.grupos.filter(g => g.tipo === "categoria" && g.clave !== "TODAS" && !g.pequeno).slice(0, 3).map(g => g.clave)];
+  const curvas = await Promise.all(elegidos.map(c => api("/survival/" + encodeURIComponent(c))));
+  const datasets = curvas.map((c, i) => ({label: `${elegidos[i]} (${c.negocios} negocios)`, borderColor: paleta[i], backgroundColor: paleta[i], borderWidth: 2, pointRadius: 0,
+    stepped: true, data: c.curva.map(p => ({x: p.t, y: p.S}))}));
+  if (gSuper) gSuper.destroy();
+  gSuper = new Chart(document.getElementById("g-super"), {type: "line", data: {datasets},
+    options: {maintainAspectRatio: false, parsing: false, scales: {x: {type: "linear", title: {display: true, text: "días desde la primera reseña"}},
+      y: {min: 0.4, max: 1, title: {display: true, text: "probabilidad de seguir abierto"}}}, plugins: {legend: {position: "bottom"}}}});
+}
+
+async function evolucion() {
+  const e = await api("/live/evolucion");
+  const v = e.ventanas;
+  if (gEvol) gEvol.destroy();
+  gEvol = new Chart(document.getElementById("g-evol"), {data: {labels: v.map(x => fechaCorta(x.inicio)), datasets: [
+    {type: "line", label: "% reseñas negativas", data: v.map(x => x.pct_negativas), borderColor: "#d7301f", backgroundColor: "#d7301f", yAxisID: "y", tension: 0.2},
+    {type: "bar", label: "celdas en hotspot", data: v.map(x => x.hotspots), backgroundColor: "rgba(40,120,214,.45)", yAxisID: "y2"}]},
+    options: {maintainAspectRatio: false, animation: false, scales: {y: {title: {display: true, text: "% negativas"}, beginAtZero: true},
+      y2: {position: "right", grid: {drawOnChartArea: false}, title: {display: true, text: "celdas hotspot"}, beginAtZero: true, ticks: {precision: 0}}},
+      plugins: {legend: {position: "bottom"}}}});
+}
+
+async function refrescar() { try { await Promise.all([estado(), hotspots(), alertas(), evolucion()]); } catch (e) { console.error(e); } }
+refrescar(); supervivencia();
+setInterval(refrescar, 5000);      // se actualiza solo mientras el productor publica
+setInterval(supervivencia, 60000);
+</script>
+</body>
+</html>

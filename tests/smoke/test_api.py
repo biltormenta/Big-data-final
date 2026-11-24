@@ -127,3 +127,115 @@ def test_parametros_invalidos_dan_400(metodo, ruta, params):
 def test_poligono_invalido_da_400():
     assert requests.post(f"{API}/businesses/within", json={"type": "Point", "coordinates": [0, 0]}).status_code == 400
     assert requests.post(f"{API}/businesses/within", data="no es json").status_code == 400
+
+
+# ===================== entrega 2: streaming, supervivencia y riesgo =====================
+INICIO = datetime.datetime(2099, 3, 1)  # fecha lejana: no se mezcla con ventanas reales
+
+
+def _ventana(celda, lon, lat, n, neg, hot, delta):
+    d = 0.002
+    return {"_id": f"prueba-{celda}|2099-03-01", "_prueba": True, "celda": celda, "inicio": INICIO, "fin": INICIO + datetime.timedelta(days=30),
+            "n": n, "negativas": neg, "pct_negativas": round(neg / n * 100, 2), "hotspot": hot, "delta_pp": delta, "pct_prev": 10.0,
+            "n_prev": 50, "umbral_pp": 10.0, "loc": {"type": "Point", "coordinates": [lon, lat]},
+            "geom": {"type": "Polygon", "coordinates": [[[lon - d, lat - d], [lon + d, lat - d], [lon + d, lat + d], [lon - d, lat + d], [lon - d, lat - d]]]}}
+
+
+def _riesgo(i, lon, lat, prob, activa=True):
+    return {"_id": f"prueba-r{i}", "_prueba": True, "business_id": f"prueba-r{i}", "name": f"riesgo{i}", "categoria_principal": "Pizza",
+            "geohash": "s00000", "loc": {"type": "Point", "coordinates": [lon, lat]}, "prob": prob, "umbral": 0.5,
+            "alerta": prob >= 0.5, "activa": activa, "fecha": INICIO, "fecha_ref": INICIO, "features": {"n_resenas": 10}}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def datos_entrega2():
+    db = MongoClient(MONGO)[DB]
+    db["ventanas"].create_index([("loc", GEOSPHERE)])
+    db["alerts"].create_index([("loc", GEOSPHERE)])
+    db["riesgo_actual"].create_index([("loc", GEOSPHERE)])
+    db["ventanas"].insert_many([_ventana("p0cerca", LON0, LAT0, 100, 40, True, 22.5), _ventana("p1normal", LON0 + 0.0005, LAT0, 100, 12, False, 2.0),
+                                _ventana("p2lejos", LON0 + 0.5, LAT0, 100, 50, True, 30.0)])
+    riesgos = [_riesgo(1, LON0, LAT0, 0.9), _riesgo(2, LON0 + 0.0003, LAT0, 0.6), _riesgo(3, LON0 - 0.0003, LAT0, 0.2, activa=False),
+               _riesgo(4, LON0 + 0.5, LAT0, 0.8)]
+    db["riesgo_actual"].insert_many(riesgos)
+    db["alerts"].insert_many([r for r in riesgos if r["prob"] >= 0.5] + [riesgos[2]])
+    curva = [{"t": 100.0, "S": 0.99, "ic_inf": 0.98, "ic_sup": 1.0, "en_riesgo": 500, "cierres": 5},
+             {"t": 400.0, "S": 0.9, "ic_inf": 0.88, "ic_sup": 0.92, "en_riesgo": 300, "cierres": 30}]
+    base = {"tipo": "categoria", "negocios": 500, "cierres": 40, "censurados": 460, "mediana_dias": None, "s_1a": 0.97, "s_3a": None,
+            "s_5a": None, "t_inicio": 100.0, "t_fin": 400.0, "en_riesgo_inicio": 500, "curva": curva}
+    db["supervivencia"].insert_many([{"_id": "categoria|PruebaGrande", "_prueba": True, "clave": "PruebaGrande", "pequeno": False, **base},
+                                     {"_id": "categoria|PruebaChica", "_prueba": True, "clave": "PruebaChica", "pequeno": True, **base},
+                                     {"_id": "zona|s00000", "_prueba": True, "tipo": "zona", "clave": "s00000", "pequeno": False,
+                                      **{k: v for k, v in base.items() if k != "tipo"}}])
+    yield
+    for col in ("ventanas", "alerts", "riesgo_actual", "supervivencia"):
+        db[col].delete_many({"_prueba": True})
+
+
+def test_health_incluye_kafka_y_el_retraso_del_consumidor():
+    j = requests.get(f"{API}/health").json()
+    assert "kafka" in j["servicios"] and "consumidor" in j["servicios"]
+    assert j["servicios"]["kafka"]["estado"] in ("ok", "caido")
+    # sin el job de streaming corriendo el consumidor no se ha iniciado: se informa, no se esconde
+    assert j["servicios"]["consumidor"]["estado"] in ("sin_iniciar", "detenido", "ok")
+
+
+def test_hotspots_por_ventana_y_zona():
+    r = requests.get(f"{API}/live/hotspots", params={"ventana": "2099-03-01"})
+    celdas = [f["properties"]["celda"] for f in r.json()["features"]]
+    assert r.status_code == 200 and sorted(celdas) == ["p0cerca", "p2lejos"]           # solo los hotspot
+    assert r.json()["features"][0]["geometry"]["type"] == "Polygon"                     # con la geometria de su celda
+    r = requests.get(f"{API}/live/hotspots", params={"ventana": "2099-03-01", "lat": LAT0, "lon": LON0, "radio": 1000})
+    assert [f["properties"]["celda"] for f in r.json()["features"]] == ["p0cerca"]       # el de 55 km queda fuera
+    r = requests.get(f"{API}/live/hotspots", params={"ventana": "2099-03-01", "todas": "1", "lat": LAT0, "lon": LON0, "radio": 1000})
+    assert sorted(f["properties"]["celda"] for f in r.json()["features"]) == ["p0cerca", "p1normal"]
+    assert requests.get(f"{API}/live/hotspots").json()["ventana"].startswith("2099-03-01")  # 'ultima' por defecto
+
+
+def test_alertas_por_radio_poligono_y_probabilidad():
+    r = requests.get(f"{API}/alerts", params={"lat": LAT0, "lon": LON0, "radio": 500})
+    assert r.status_code == 200 and [f["properties"]["name"] for f in r.json()["features"]] == ["riesgo1", "riesgo2"]  # mayor riesgo primero
+    r = requests.get(f"{API}/alerts", params={"lat": LAT0, "lon": LON0, "radio": 500, "min_prob": 0.7})
+    assert [f["properties"]["name"] for f in r.json()["features"]] == ["riesgo1"]
+    r = requests.get(f"{API}/alerts", params={"lat": LAT0, "lon": LON0, "radio": 500, "todas": "1"})
+    assert r.json()["count"] == 3                                                         # con la ya cerrada
+    r = requests.post(f"{API}/alerts", json=CAJA)
+    assert r.status_code == 200 and r.json()["count"] == 2
+
+
+def test_supervivencia_categoria_zona_y_grupos_chicos():
+    r = requests.get(f"{API}/survival/PruebaGrande")
+    assert r.status_code == 200 and r.json()["negocios"] == 500 and r.json()["curva"][0]["en_riesgo"] == 500 and "aviso" not in r.json()
+    assert "aviso" in requests.get(f"{API}/survival/PruebaChica").json()                 # el grupo chico se marca, no se interpreta
+    assert requests.get(f"{API}/survival/PruebaGrande", params={"zona": "s00000"}).json()["tipo"] == "zona"
+    assert requests.get(f"{API}/survival/NoExiste").status_code == 404
+    assert any(g["clave"] == "PruebaGrande" for g in requests.get(f"{API}/survival").json()["grupos"])
+
+
+def test_riesgo_cercano_ordenado_por_probabilidad():
+    r = requests.get(f"{API}/risk/near", params={"lat": LAT0, "lon": LON0, "radio": 500})
+    nombres = [f["properties"]["name"] for f in r.json()["features"]]
+    assert r.status_code == 200 and nombres == ["riesgo1", "riesgo2", "riesgo3"] and "estado" not in r.json()["features"][0]["properties"]
+    r = requests.get(f"{API}/risk/near", params={"lat": LAT0, "lon": LON0, "radio": 500, "min_prob": 0.5})
+    assert r.json()["count"] == 2
+
+
+def test_evolucion_y_dashboard():
+    e = requests.get(f"{API}/live/evolucion").json()["ventanas"]
+    ult = [v for v in e if v["inicio"].startswith("2099-03-01")][0]
+    assert ult["n"] == 300 and ult["hotspots"] == 2 and ult["pct_negativas"] == pytest.approx(34.0)
+    assert requests.get(f"{API}/live/estado").status_code == 200
+    r = requests.get(f"{API}/dashboard")
+    assert r.status_code == 200 and "g-super" in r.text and "alertas" in r.text
+
+
+@pytest.mark.parametrize("metodo,ruta,params", [
+    ("get", "/live/hotspots", {"ventana": "mañana"}),
+    ("get", "/live/hotspots", {"lat": 1}),                      # lat sin lon ni radio
+    ("get", "/alerts", {"lat": 1, "lon": 1}),                   # falta el radio
+    ("get", "/alerts", {"min_prob": 2}),
+    ("get", "/risk/near", {"lat": "x", "lon": 1, "radio": 10}),
+    ("get", "/risk/near", {"lat": 1, "lon": 1}),
+])
+def test_parametros_invalidos_entrega2_dan_400(metodo, ruta, params):
+    assert getattr(requests, metodo)(f"{API}{ruta}", params=params).status_code == 400

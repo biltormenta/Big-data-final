@@ -100,6 +100,7 @@ def _feature(doc):
     d = dict(doc)
     loc = d.pop("loc")
     d["business_id"] = d.pop("_id", None)
+    d["lat"], d["lon"] = loc["coordinates"][1], loc["coordinates"][0]  # tambien como columnas, para Power BI
     return {"type": "Feature", "geometry": loc, "properties": a_json(d)}
 
 
@@ -163,3 +164,95 @@ def tasas_guardadas(db, por, min_dias, limite):
     coleccion = config.COL_TASAS_CATEGORIA if por == "categoria" else config.COL_TASAS_CELDA
     filtro = {"dias_negocio": {"$gte": min_dias}}
     return list(db[coleccion].find(filtro, {"_id": 0}).sort("tasa_cierre_pct", -1).limit(limite))
+
+
+# ---------------- entrega 2 ----------------
+RADIO_TIERRA_M = 6378100.0
+
+
+def validar_fecha(texto):
+    """'ultima' (o vacio) = la ventana mas reciente; si no, una fecha AAAA-MM-DD."""
+    if texto in (None, "", "ultima"):
+        return None
+    try:
+        return datetime.strptime(texto, "%Y-%m-%d")
+    except ValueError:
+        raise ParametroInvalido("ventana debe ser 'ultima' o una fecha AAAA-MM-DD (el inicio de la ventana)")
+
+
+def validar_prob(valor, defecto=0.0):
+    if valor in (None, ""):
+        return defecto
+    try:
+        valor = float(valor)
+    except (TypeError, ValueError):
+        raise ParametroInvalido("min_prob debe ser un numero entre 0 y 1")
+    if not 0 <= valor <= 1:
+        raise ParametroInvalido("min_prob debe estar entre 0 y 1")
+    return valor
+
+
+def punto_opcional(args):
+    """lat, lon y radio van juntos: si no viene ninguno no se filtra por zona; si falta alguno es un error."""
+    if all(args.get(k) in (None, "") for k in ("lat", "lon", "radio")):
+        return None
+    lat, lon = validar_punto(args.get("lat"), args.get("lon"))
+    return lat, lon, validar_radio(args.get("radio"))
+
+
+def en_radio(lat, lon, radio_m):
+    """Filtro de mongo para 'dentro de este radio' (la salida no queda ordenada por distancia)."""
+    return {"$geoWithin": {"$centerSphere": [[lon, lat], radio_m / RADIO_TIERRA_M]}}
+
+
+def hotspots(db, inicio, zona, todas, limite):
+    """Celdas de una ventana de 30 dias. Por defecto solo las que son hotspot; todas=True devuelve todas (para colorear el mapa)."""
+    col = db[config.COL_VENTANAS]
+    if inicio is None:
+        # "ultima" = la ventana mas reciente que tenga hotspots; si ninguna tiene, la mas reciente con celdas con suficientes
+        # resenas. La mas nueva de todas casi siempre esta a medias (lleva pocos dias) y no tiene nada que mostrar
+        ultima = (col.find_one({"hotspot": True}, {"inicio": 1}, sort=[("inicio", -1)])
+                  or col.find_one({"n": {"$gte": config.MIN_RESENAS_VENTANA}}, {"inicio": 1}, sort=[("inicio", -1)])
+                  or col.find_one({}, {"inicio": 1}, sort=[("inicio", -1)]))
+        if ultima is None:
+            return None, []
+        inicio = ultima["inicio"]
+    filtro = {"inicio": inicio}
+    if not todas:
+        filtro["hotspot"] = True
+    if zona:
+        filtro["loc"] = en_radio(*zona)
+    docs = list(col.find(filtro, {"_id": 0}).sort("pct_negativas", -1).limit(limite))
+    return inicio, docs
+
+
+def ventana_a_feature(d):
+    """Una ventana como Feature: el poligono de su celda, y su centro como lat/lon (para Power BI)."""
+    p = {k: v for k, v in d.items() if k not in ("geom", "loc")}
+    p["lat"], p["lon"] = d["loc"]["coordinates"][1], d["loc"]["coordinates"][0]
+    return {"type": "Feature", "geometry": d["geom"], "properties": a_json(p)}
+
+
+def alertas(db, zona, poligono, min_prob, solo_activas, limite):
+    filtro = {"prob": {"$gte": min_prob}}
+    if solo_activas:
+        filtro["activa"] = True
+    if zona:
+        filtro["loc"] = en_radio(*zona)
+    elif poligono:
+        filtro["loc"] = {"$geoWithin": {"$geometry": poligono}}
+    return list(db[config.COL_ALERTAS].find(filtro).sort("prob", -1).limit(limite))
+
+
+def riesgo_cercano(db, lat, lon, radio_m, min_prob, limite):
+    filtro = {"loc": en_radio(lat, lon, radio_m), "prob": {"$gte": min_prob}}
+    return list(db[config.COL_RIESGO].find(filtro, {"estado": 0}).sort("prob", -1).limit(limite))
+
+
+def evolucion(db):
+    """% de resenas negativas por ventana de 30 dias (todas las celdas juntas) y cuantas celdas son hotspot."""
+    pipeline = [{"$group": {"_id": "$inicio", "n": {"$sum": "$n"}, "negativas": {"$sum": "$negativas"},
+                            "hotspots": {"$sum": {"$cond": ["$hotspot", 1, 0]}}, "celdas": {"$sum": 1}}},
+                {"$sort": {"_id": 1}}]
+    return [{"inicio": f["_id"], "n": f["n"], "pct_negativas": round(f["negativas"] / f["n"] * 100, 2) if f["n"] else None,
+             "hotspots": f["hotspots"], "celdas": f["celdas"]} for f in db[config.COL_VENTANAS].aggregate(pipeline)]
