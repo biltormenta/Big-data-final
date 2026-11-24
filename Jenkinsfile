@@ -42,9 +42,9 @@ pipeline {
             }
         }
 
-        // 4. levanta solo mongo y la api en la pila de pruebas (--wait espera a que esten sanos)
+        // 4. levanta mongo, kafka y la api en la pila de pruebas (--wait espera a que esten sanos)
         stage('Levantar pila de pruebas') {
-            steps { sh '${CI_COMPOSE} up -d --wait mongo api' }
+            steps { sh '${CI_COMPOSE} up -d --wait mongo kafka api' }
         }
 
         // 5. pruebas contra la api: llaman de verdad a los endpoints y verifican las respuestas
@@ -52,11 +52,23 @@ pipeline {
             steps { sh '${CI_COMPOSE} run --rm pruebas-api' }
         }
 
+        // 5b. entrega 2: prueba de humo del flujo. Publica 100 mensajes en kafka y verifica que aparecen clasificados en
+        // mongo (con ventanas por celda y riesgo actualizado), y que el modelo que cargo el streaming es el versionado.
+        stage('Prueba del flujo de streaming y del modelo versionado') {
+            steps { sh '${CI_COMPOSE} --profile tests run --rm pruebas-streaming' }
+        }
+
         // si cualquier etapa de arriba falla el pipeline se corta aqui y no se despliega nada
         // 6. despliegue real: reconstruye y reinicia los servicios con el codigo nuevo (los datos viven en volumenes)
         stage('Desplegar') {
             steps {
-                sh 'docker compose up -d --build --wait mongo dask-scheduler dask-worker spark-master spark-worker api'
+                sh 'docker compose up -d --build --wait mongo kafka dask-scheduler dask-worker spark-master spark-worker api'
+                // el streaming se reinicia con el codigo nuevo, pero solo si los modelos ya estan entrenados
+                sh '''if docker compose exec -T spark-master test -f /data/modelos/riesgo/version.json; then
+                        docker compose --profile streaming up -d --build streaming
+                      else
+                        echo "modelos sin entrenar todavia: el streaming no se inicia"
+                      fi'''
             }
         }
 
@@ -70,7 +82,8 @@ pipeline {
                                  string(credentialsId: 'kaggle-key', variable: 'KAGGLE_KEY')]) {
                     sh 'docker compose --profile jobs run --rm -e KAGGLE_USERNAME -e KAGGLE_KEY ingesta'
                 }
-                sh '''for job in sentimiento tasas_mapreduce balanceo; do
+                // entrega 1 (batch) y entrega 2 (sentimiento con corte T, umbral de hotspot, supervivencia y modelo de riesgo)
+                sh '''for job in sentimiento tasas_mapreduce balanceo umbral_hotspot supervivencia_job riesgo_modelo; do
                         docker compose exec -T spark-master /opt/spark/bin/spark-submit \
                           --master spark://spark-master:7077 --conf spark.driver.host=spark-master \
                           --driver-memory 1g --executor-memory 1800m /opt/jobs/$job.py
