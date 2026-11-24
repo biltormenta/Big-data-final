@@ -32,6 +32,8 @@ x-spark: &spark
     MONGO_DB: lifemap
     DATOS_DIR: /data
     GIT_COMMIT: ${GIT_COMMIT:-local}
+    KAFKA_SERVIDOR: kafka:9092
+    FECHA_T: ${FECHA_T:-2021-01-19}
   volumes:
     - datos:/data
 
@@ -121,6 +123,7 @@ services:
       DATOS_DIR: /data
       GIT_COMMIT: ${GIT_COMMIT:-local}
       SPARK_MASTER_URL: http://spark-master:8080
+      KAFKA_SERVIDOR: kafka:9092
       DASK_SCHEDULER_URL: http://dask-scheduler:8787
     depends_on:
       mongo: {condition: service_healthy}
@@ -169,6 +172,82 @@ services:
       MONGO_DB: lifemap
     depends_on:
       api: {condition: service_healthy}
+
+  # ---------------- entrega 2 ----------------
+  # kafka en modo KRaft (sin zookeeper). El topic "reviews" (3 particiones) lo crea el productor si no existe
+  kafka:
+    image: apache/kafka:3.7.1
+    restart: unless-stopped
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+    volumes:
+      - kafka_datos:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    deploy:
+      resources:
+        limits: {memory: 900m}
+
+  # inferencia en streaming: lee el topic, clasifica cada resena con el modelo de la entrega 1 (sin reentrenarlo),
+  # agrega por celda y ventana de 30 dias, y actualiza alertas de riesgo de cierre. Corre todo el tiempo una vez
+  # entrenados los modelos: docker compose --profile streaming up -d streaming
+  streaming:
+    <<: *spark
+    hostname: streaming
+    command: ["/opt/spark/bin/spark-submit", "--master", "spark://spark-master:7077", "--conf", "spark.driver.host=streaming",
+              "--total-executor-cores", "1", "--executor-memory", "1g", "--driver-memory", "768m",
+              "/opt/jobs/streaming_resenas.py"]
+    profiles: ["streaming"]
+    depends_on:
+      kafka: {condition: service_healthy}
+      spark-master: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+    deploy:
+      resources:
+        limits: {memory: 1500m}
+
+  # productor con reloj acelerado: publica en kafka las resenas posteriores a T, en orden de fecha, con clave business_id.
+  # SEG_POR_MES = cuantos segundos reales dura un mes de resenas (por defecto 10)
+  productor:
+    <<: *app
+    command: ["python", "-m", "app.productor"]
+    profiles: ["jobs"]
+    restart: "no"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: lifemap
+      KAFKA_SERVIDOR: kafka:9092
+      SEG_POR_MES: ${SEG_POR_MES:-10}
+      FECHA_T: ${FECHA_T:-2021-01-19}
+    depends_on:
+      kafka: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+
+  # prueba de humo del flujo (la usa jenkins): publica 100 mensajes y verifica que quedan clasificados en mongo
+  pruebas-streaming:
+    <<: *spark
+    command: ["bash", "/opt/tests/humo_streaming.sh"]
+    profiles: ["tests"]
+    restart: "no"
+    depends_on:
+      kafka: {condition: service_healthy}
+      mongo: {condition: service_healthy}
 
   # jenkins con imagen propia. Se monta el socket de docker para construir y levantar contenedores
   jenkins:
@@ -219,4 +298,5 @@ services:
 volumes:
   datos:
   mongo_datos:
+  kafka_datos:
   jenkins_home:

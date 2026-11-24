@@ -8,3 +8,4 @@ pymongo==4.10.1
 kagglehub==0.3.4
 requests==2.32.3
 pytest==8.3.4
+kafka-python==2.0.2

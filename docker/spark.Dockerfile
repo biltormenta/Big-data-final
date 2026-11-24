@@ -12,9 +12,17 @@ RUN cd /opt/spark/jars \
  && curl -fsSLO ${MVN}/bson/5.1.4/bson-5.1.4.jar \
  && curl -fsSLO ${MVN}/bson-record-codec/5.1.4/bson-record-codec-5.1.4.jar
 
+# conector de Structured Streaming para Kafka y sus dependencias (tambien bajados al construir la imagen)
+ARG MVNK=https://repo1.maven.org/maven2
+RUN cd /opt/spark/jars \
+ && curl -fsSLO ${MVNK}/org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.3/spark-sql-kafka-0-10_2.12-3.5.3.jar \
+ && curl -fsSLO ${MVNK}/org/apache/spark/spark-token-provider-kafka-0-10_2.12/3.5.3/spark-token-provider-kafka-0-10_2.12-3.5.3.jar \
+ && curl -fsSLO ${MVNK}/org/apache/kafka/kafka-clients/3.4.1/kafka-clients-3.4.1.jar \
+ && curl -fsSLO ${MVNK}/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar
+
 # librerias de python: parquet, mongo, la api flask y pytest (la api corre en esta misma imagen para poder cargar el modelo)
 RUN pip install --no-cache-dir "numpy<2" pandas==2.2.3 pyarrow==18.1.0 scipy==1.13.1 \
-    pymongo==4.10.1 requests==2.32.3 flask==3.1.0 gunicorn==23.0.0 pytest==8.3.4
+    pymongo==4.10.1 requests==2.32.3 flask==3.1.0 gunicorn==23.0.0 pytest==8.3.4 kafka-python==2.0.2
 
 WORKDIR /opt
 # codigo dentro de la imagen (nada de volumenes de codigo, asi jenkins puede desplegar desde el repo)
