@@ -24,7 +24,8 @@ RES = os.path.join(AQUI, "..", "resultados")
 SALIDA = os.path.join(AQUI, "Informe_LifeMap_Entrega2.docx")
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--url", default="pendiente de definir (ver README, seccion Despliegue)")
+ap.add_argument("--url", default="https://reshape-varied-overlap.ngrok-free.dev")
+ap.add_argument("--repo", default="https://github.com/biltormenta/Big-data-final")
 args = ap.parse_args()
 
 
@@ -198,6 +199,41 @@ par.alignment = WD_ALIGN_PARAGRAPH.CENTER
 par.add_run("Big Data · Institución Universitaria de Envigado · 2026-2 · David Mesa y Eber Urrego\n"
             f"Grupo: Philadelphia (PA) + Restaurants · URL del sistema: {args.url}")
 
+# ---- enlaces de la entrega
+def enlace(par, url):
+    rid = doc.part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True)
+    h = OxmlElement("w:hyperlink")
+    h.set(qn("r:id"), rid)
+    run = OxmlElement("w:r")
+    pr = OxmlElement("w:rPr")
+    col = OxmlElement("w:color")
+    col.set(qn("w:val"), "0563C1")
+    sub = OxmlElement("w:u")
+    sub.set(qn("w:val"), "single")
+    pr.append(col)
+    pr.append(sub)
+    run.append(pr)
+    t = OxmlElement("w:t")
+    t.text = url
+    run.append(t)
+    h.append(run)
+    par._p.append(h)
+
+
+h1("Enlaces de la entrega")
+for etiqueta, url in [
+    ("Repositorio en GitHub:", args.repo),
+    ("Sistema desplegado (API):", args.url),
+    ("Panel en vivo:", args.url + "/dashboard"),
+    ("Mapa interactivo:", args.url + "/mapa"),
+    ("Estado de los servicios (incluye Kafka y el consumidor):", args.url + "/health"),
+    ("Dashboard de Power BI (.pbix, en el repositorio):", args.repo + "/blob/main/powerbi/LifeMap_Entrega2.pbix"),
+]:
+    par = doc.add_paragraph(style="List Bullet")
+    par.add_run(etiqueta + " ").bold = True
+    enlace(par, url)
+    par.paragraph_format.space_after = Pt(1)
+
 # ---- 1. arquitectura
 h1("1. Arquitectura completa")
 p("La Entrega 2 se monta sobre la plataforma batch de la Entrega 1 sin reemplazarla: el mismo docker-compose.yml, la misma base MongoDB, la misma API y el mismo "
@@ -311,20 +347,27 @@ tabla(["Endpoint", "Qué devuelve", "Parámetros"], [
     ["GET /health", "Estado de cada servicio, incluidos Kafka y el retraso del consumidor", "—"],
 ], [1.7, 2.9, 2.3])
 p("El panel (/dashboard) tiene las cuatro visualizaciones pedidas: mapa de hotspots, tabla de alertas activas, curvas de supervivencia y evolución del % negativo, y se actualiza cada 5 segundos "
-  "mientras el productor publica. Para Power BI se entrega una guía con las consultas (Web.Contents) de cada visual sobre estos mismos endpoints; el archivo .pbix se arma conectándolas a la URL desplegada.")
+  "mientras el productor publica. El dashboard de Power BI (powerbi/LifeMap_Entrega2.pbix en el repositorio) tiene las mismas cuatro visualizaciones y consulta estos endpoints con Web.Contents; apunta por defecto a http://localhost:5000 y se redirige a la URL desplegada cambiando el parámetro UrlBase. Se actualiza con el botón Actualizar mientras el productor publica.")
 p("Jenkins agrega dos pruebas antes de desplegar, y una falla detiene el despliegue: (1) prueba de humo del flujo, que publica 100 mensajes en un topic de prueba y verifica que aparecen "
   "clasificados en MongoDB, agregados en ventanas con su geometría y con el riesgo actualizado, y que el topic tiene 3 particiones; (2) prueba del modelo versionado, que confirma que la huella del "
   "modelo que cargó el streaming es la de su version.json (y una prueba unitaria confirma que un modelo modificado no se carga). Además hay pruebas unitarias del Kaplan-Meier (censura y entrada tardía), "
   "del riesgo (sin fuga de datos posteriores a T y estado incremental igual a recálculo completo) y de la regla de hotspot.")
 
 # ---- 7. reflexion
-h1("7. Qué se reutilizó")
+h1("7. Qué se reutilizó y qué cambió")
+p("Partimos de lo construido en los trabajos anteriores del semestre y de la Entrega 1; en cada caso lo que cambia es el objeto de estudio (un negocio con ubicación y texto) y lo que hubo que adaptar para que siguiera siendo correcto.")
 v("el pipeline de limpieza, tokenización, stopwords y TF-IDF con Naive Bayes y regresión logística se entrenó en la Entrega 1 con texto real y aquí se carga ya entrenado para clasificar en vivo; "
   "lo nuevo es el corte T para no ver el futuro y el versionado por huella.", "SentimentStream:")
 v("el productor, el consumidor con inferencia en streaming y la alerta temprana con un modelo evaluado con AUC-PR por el desbalance; cambia el objeto (cierre de negocio en lugar de falla cardíaca) "
   "y se agrega la actualización incremental de variables por micro-lote.", "KafkaMed:")
 v("MongoDB con GeoJSON e índice 2dsphere, $near, $geoWithin y $geoNear, Docker Compose, Jenkins con despliegue automático y descarga desde Kaggle; ahora también las celdas y ventanas con su geometría.", "Trabajo geoespacial:")
 v("reduceByKey y la tasa anualizada (Entrega 1), la censura y la entrada tardía, las curvas de Kaplan-Meier restringidas a donde hay suficientes en riesgo, y las ventanas con watermark.", "Ejercicio de discos:")
+p("Lo que aprendimos al reutilizar:")
+v("la fórmula de Kaplan-Meier de los discos no se podía copiar tal cual. Yelp solo incluye negocios con al menos 5 reseñas, así que ninguno puede cerrar antes de ese momento: "
+  "hubo que tratar ese punto como entrada tardía (en riesgo solo desde la quinta reseña) y cortar la curva donde quedan menos de 30 negocios en riesgo.", "Supervivencia:")
+v("en los discos la falla es un evento claro; aquí el cierre se infiere de la última reseña, por eso la etiqueta usa una ventana de 12 meses después de T y el modelo queda modesto "
+  "(la prueba solo tiene unos 40 cierres). Elegimos el modelo y el umbral con validación cruzada y usamos la prueba una sola vez.", "Riesgo de cierre:")
+v("el modelo de la Entrega 1 se reentrenó con el corte T para no ver el futuro, y cada modelo se guarda con una versión; Jenkins y la prueba de humo del streaming evitan desplegar un flujo roto.", "Operación:")
 
 # ---- 8. limitaciones
 h1("8. Limitaciones")
