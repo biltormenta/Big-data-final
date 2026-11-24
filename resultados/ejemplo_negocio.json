@@ -1,0 +1,48 @@
+{
+  "documento": {
+    "_id": "QdN72BWoyFypdGJhhI5r7g",
+    "name": "Bar One",
+    "city": "Philadelphia",
+    "state": "PA",
+    "stars": 4.0,
+    "review_count": 65,
+    "is_open": 0,
+    "categories": [
+      "Cocktail Bars",
+      "Bars",
+      "Italian",
+      "Nightlife",
+      "Restaurants"
+    ],
+    "categoria_principal": "Nightlife",
+    "geohash": "dr4e1",
+    "loc": {
+      "type": "Point",
+      "coordinates": [
+        -75.1574465632,
+        39.9398245705
+      ]
+    },
+    "vida": {
+      "primera_resena": "2016-10-21 22:37:36",
+      "ultima_resena": "2020-02-08 02:02:13",
+      "dias_negocio": 1204,
+      "evento": 1,
+      "censurado": false
+    },
+    "resenas": {
+      "n": 69,
+      "suma_sentimiento": 33,
+      "negativas": 15,
+      "sentimiento_medio": 0.4783,
+      "pct_negativas": 21.74
+    }
+  },
+  "indices": [
+    "_id_",
+    "categoria_principal_1",
+    "geohash_1",
+    "is_open_1",
+    "loc_2dsphere"
+  ]
+}

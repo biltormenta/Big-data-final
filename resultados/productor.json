@@ -1,0 +1,9 @@
+{
+  "publicadas": 88429,
+  "total_reservadas": 88429,
+  "seg_por_mes": 10.0,
+  "topic": "reviews",
+  "hasta_fecha": "2022-01-19",
+  "segundos": 120.2,
+  "particiones": 3
+}

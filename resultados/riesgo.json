@@ -1,0 +1,98 @@
+{
+  "fecha_t": "2021-01-19",
+  "horizonte_meses": 12,
+  "features": [
+    "sentimiento_medio",
+    "tendencia_neg",
+    "estrellas",
+    "n_resenas",
+    "edad_dias",
+    "dias_desde_ultima",
+    "actividad_6m",
+    "delta_estrellas_6m",
+    "competidores"
+  ],
+  "negocios_con_historia": 16579,
+  "negocios_activos_a_T": 10123,
+  "entrenamiento": {
+    "negocios": 9466,
+    "cierres": 342,
+    "cierres_pct": 3.61
+  },
+  "particion": {
+    "tamanos": {
+      "desarrollo": 8082,
+      "prueba": 1384
+    },
+    "cierres": {
+      "desarrollo": 302,
+      "prueba": 40
+    },
+    "pliegues": 5
+  },
+  "pesos_de_clase": {
+    "cierra": 13.38,
+    "no_cierra": 0.52
+  },
+  "modelos": {
+    "regresion_logistica": {
+      "auc_roc_cv": 0.6419,
+      "auc_roc_cv_desv": 0.0266,
+      "auc_pr_cv": 0.0883,
+      "auc_pr_cv_desv": 0.0237
+    },
+    "gbt": {
+      "auc_roc_cv": 0.6304,
+      "auc_roc_cv_desv": 0.0239,
+      "auc_pr_cv": 0.1133,
+      "auc_pr_cv_desv": 0.0369,
+      "auc_roc_test": 0.6631,
+      "auc_pr_test": 0.1564
+    },
+    "random_forest": {
+      "auc_roc_cv": 0.6404,
+      "auc_roc_cv_desv": 0.0234,
+      "auc_pr_cv": 0.1009,
+      "auc_pr_cv_desv": 0.0171
+    }
+  },
+  "mejor_modelo": "gbt",
+  "umbral": 0.75,
+  "en_validacion_cruzada": {
+    "umbral": 0.75,
+    "precision": 0.1877,
+    "recall": 0.1623,
+    "f1": 0.1741,
+    "tp": 49,
+    "fp": 212,
+    "fn": 253,
+    "tn": 7568,
+    "marcados_pct": 3.23
+  },
+  "en_prueba": {
+    "umbral": 0.75,
+    "precision": 0.2,
+    "recall": 0.25,
+    "f1": 0.2222,
+    "tp": 10,
+    "fp": 40,
+    "fn": 30,
+    "tn": 1304,
+    "marcados_pct": 3.61
+  },
+  "auc_pr_base_azar": 0.0289,
+  "importancia": {
+    "sentimiento_medio": 0.0779,
+    "tendencia_neg": 0.0664,
+    "estrellas": 0.1113,
+    "n_resenas": 0.1943,
+    "edad_dias": 0.1614,
+    "dias_desde_ultima": 0.1147,
+    "actividad_6m": 0.1423,
+    "delta_estrellas_6m": 0.0799,
+    "competidores": 0.0519
+  },
+  "version": "2c0b9b112d",
+  "alertas_base": 438,
+  "segundos": 219.3
+}

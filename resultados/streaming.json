@@ -1,0 +1,267 @@
+{
+  "fecha_t": "2021-01-19",
+  "reservadas_posteriores_a_T": 88429,
+  "clasificadas": 88429,
+  "diferencia_con_reservadas": 0,
+  "desde": "2021-01-19",
+  "hasta": "2022-01-19",
+  "distribucion_predicha": {
+    "positivo": 60754,
+    "negativo": 22733,
+    "neutral": 4942
+  },
+  "acierto_vs_estrellas": 0.8738,
+  "ventanas": {
+    "total": 4026,
+    "celdas": 371,
+    "resenas_en_ventanas": 88429,
+    "hotspots": 32,
+    "celdas_con_hotspot": 25,
+    "umbral_pp": 13.9
+  },
+  "top_hotspots": [
+    {
+      "celda": "dr4u8",
+      "inicio": "2021-05-19T00:00:00",
+      "n": 40,
+      "pct_negativas": 45.0,
+      "delta_pp": 29.38
+    },
+    {
+      "celda": "dr4kk",
+      "inicio": "2021-04-19T00:00:00",
+      "n": 46,
+      "pct_negativas": 45.65,
+      "delta_pp": 28.98
+    },
+    {
+      "celda": "dr47x",
+      "inicio": "2021-07-18T00:00:00",
+      "n": 33,
+      "pct_negativas": 42.42,
+      "delta_pp": 26.8
+    },
+    {
+      "celda": "dr4en",
+      "inicio": "2021-03-20T00:00:00",
+      "n": 55,
+      "pct_negativas": 50.91,
+      "delta_pp": 26.42
+    },
+    {
+      "celda": "dr47x",
+      "inicio": "2021-03-20T00:00:00",
+      "n": 30,
+      "pct_negativas": 43.33,
+      "delta_pp": 25.15
+    },
+    {
+      "celda": "dr4ej",
+      "inicio": "2021-04-19T00:00:00",
+      "n": 46,
+      "pct_negativas": 41.3,
+      "delta_pp": 23.99
+    },
+    {
+      "celda": "dr4e9",
+      "inicio": "2021-08-17T00:00:00",
+      "n": 34,
+      "pct_negativas": 44.12,
+      "delta_pp": 22.69
+    },
+    {
+      "celda": "dr47y",
+      "inicio": "2021-09-16T00:00:00",
+      "n": 36,
+      "pct_negativas": 41.67,
+      "delta_pp": 21.16
+    }
+  ],
+  "evolucion": [
+    {
+      "inicio": "2021-01-19T00:00:00",
+      "n": 6091,
+      "pct_negativas": 22.97,
+      "hotspots": 0,
+      "celdas": 310
+    },
+    {
+      "inicio": "2021-02-18T00:00:00",
+      "n": 6441,
+      "pct_negativas": 23.12,
+      "hotspots": 1,
+      "celdas": 323
+    },
+    {
+      "inicio": "2021-03-20T00:00:00",
+      "n": 7108,
+      "pct_negativas": 25.28,
+      "hotspots": 3,
+      "celdas": 316
+    },
+    {
+      "inicio": "2021-04-19T00:00:00",
+      "n": 7398,
+      "pct_negativas": 26.4,
+      "hotspots": 5,
+      "celdas": 324
+    },
+    {
+      "inicio": "2021-05-19T00:00:00",
+      "n": 7716,
+      "pct_negativas": 25.27,
+      "hotspots": 2,
+      "celdas": 312
+    },
+    {
+      "inicio": "2021-06-18T00:00:00",
+      "n": 8305,
+      "pct_negativas": 25.48,
+      "hotspots": 5,
+      "celdas": 327
+    },
+    {
+      "inicio": "2021-07-18T00:00:00",
+      "n": 8265,
+      "pct_negativas": 27.02,
+      "hotspots": 3,
+      "celdas": 328
+    },
+    {
+      "inicio": "2021-08-17T00:00:00",
+      "n": 7688,
+      "pct_negativas": 26.73,
+      "hotspots": 3,
+      "celdas": 315
+    },
+    {
+      "inicio": "2021-09-16T00:00:00",
+      "n": 7380,
+      "pct_negativas": 27.72,
+      "hotspots": 5,
+      "celdas": 316
+    },
+    {
+      "inicio": "2021-10-16T00:00:00",
+      "n": 7312,
+      "pct_negativas": 26.52,
+      "hotspots": 1,
+      "celdas": 313
+    },
+    {
+      "inicio": "2021-11-15T00:00:00",
+      "n": 6602,
+      "pct_negativas": 25.64,
+      "hotspots": 2,
+      "celdas": 318
+    },
+    {
+      "inicio": "2021-12-15T00:00:00",
+      "n": 6610,
+      "pct_negativas": 25.92,
+      "hotspots": 2,
+      "celdas": 308
+    },
+    {
+      "inicio": "2022-01-14T00:00:00",
+      "n": 1513,
+      "pct_negativas": 23.13,
+      "hotspots": 0,
+      "celdas": 216
+    }
+  ],
+  "alertas": {
+    "total_generadas": 113,
+    "activas": 17,
+    "cerradas": 96,
+    "top": [
+      {
+        "name": "Frankie's on Fairview",
+        "categoria": "American (Traditional)",
+        "prob": 0.835,
+        "fecha": "2021-05-27T03:47:19",
+        "geohash": "dr46v"
+      },
+      {
+        "name": "Jones",
+        "categoria": "American (Traditional)",
+        "prob": 0.818,
+        "fecha": "2021-11-25T19:19:03",
+        "geohash": "dr4e3"
+      },
+      {
+        "name": "Little Nonna's",
+        "categoria": "Italian",
+        "prob": 0.812,
+        "fecha": "2022-01-19T19:46:34",
+        "geohash": "dr4e3"
+      },
+      {
+        "name": "Day N Nite",
+        "categoria": "Nightlife",
+        "prob": 0.798,
+        "fecha": "2021-12-26T06:14:11",
+        "geohash": "dr4e3"
+      },
+      {
+        "name": "Nam Phuong",
+        "categoria": "Seafood",
+        "prob": 0.783,
+        "fecha": "2022-01-10T10:02:52",
+        "geohash": "dr4e1"
+      },
+      {
+        "name": "Rangoon Burmese Restaurant",
+        "categoria": "Burmese",
+        "prob": 0.778,
+        "fecha": "2022-01-10T10:02:52",
+        "geohash": "dr4e3"
+      },
+      {
+        "name": "Sabrina's Caf\u00e9",
+        "categoria": "American (Traditional)",
+        "prob": 0.771,
+        "fecha": "2021-06-11T09:05:01",
+        "geohash": "dr4e1"
+      },
+      {
+        "name": "Modo Mio Taverna",
+        "categoria": "Nightlife",
+        "prob": 0.76,
+        "fecha": "2021-12-11T00:24:28",
+        "geohash": "dr4e1"
+      },
+      {
+        "name": "Creperie Beau Monde & L'Etage",
+        "categoria": "Breakfast & Brunch",
+        "prob": 0.759,
+        "fecha": "2021-01-25T10:15:40",
+        "geohash": "dr4e1"
+      },
+      {
+        "name": "Warmdaddy's",
+        "categoria": "Breakfast & Brunch",
+        "prob": 0.758,
+        "fecha": "2021-01-25T10:15:40",
+        "geohash": "dr4e4"
+      }
+    ]
+  },
+  "negocios_con_riesgo_actualizado": 8622,
+  "productor": {
+    "publicadas": 88429,
+    "total_reservadas": 88429,
+    "seg_por_mes": 10.0,
+    "topic": "reviews",
+    "hasta_fecha": "2022-01-19",
+    "segundos": 120.2,
+    "particiones": 3
+  },
+  "consumidor": {
+    "lote_final": 25,
+    "retraso_final": 0,
+    "sin_linea_base": 4529,
+    "filas_por_seg": 0
+  },
+  "demora_procesamiento_s": 119.1
+}

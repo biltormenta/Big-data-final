@@ -1,0 +1,15 @@
+{
+  "pares_de_ventanas": 6287,
+  "ventanas_totales": 44367,
+  "celdas": 390,
+  "min_resenas_por_ventana": 30,
+  "percentil": 0.95,
+  "delta_medio_pp": -0.048,
+  "delta_desv_pp": 8.465,
+  "delta_mediana_pp": -0.044,
+  "delta_p90_pp": 10.422,
+  "umbral_pp": 13.9,
+  "hasta": "2021-01-19",
+  "segundos": 12.6,
+  "regla": "hotspot = % negativo sube >= umbral_pp frente a la ventana anterior, con >= min_resenas en las dos"
+}

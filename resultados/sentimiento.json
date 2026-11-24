@@ -1,0 +1,111 @@
+{
+  "particion": "por negocio (hash de business_id: 80 % train, 20 % test)",
+  "fraccion_entrenamiento": 1.0,
+  "resenas_train": 976368,
+  "resenas_test": 255797,
+  "negocios_en_los_dos_lados": 0,
+  "distribucion_train": {
+    "neutral": 124656,
+    "positivo": 644546,
+    "negativo": 207166
+  },
+  "distribucion_test": {
+    "neutral": 33522,
+    "positivo": 169179,
+    "negativo": 53096
+  },
+  "clase_mayoritaria": "positivo",
+  "accuracy_clase_mayoritaria": 0.6614,
+  "modelos": {
+    "naive_bayes": {
+      "accuracy": 0.7666,
+      "f1_macro": 0.6773,
+      "por_clase": {
+        "negativo": {
+          "precision": 0.7241,
+          "recall": 0.7257,
+          "f1": 0.7249,
+          "soporte": 53096
+        },
+        "neutral": {
+          "precision": 0.352,
+          "recall": 0.5689,
+          "f1": 0.4349,
+          "soporte": 33522
+        },
+        "positivo": {
+          "precision": 0.9332,
+          "recall": 0.8187,
+          "f1": 0.8722,
+          "soporte": 169179
+        }
+      },
+      "matriz_confusion": [
+        [
+          38530,
+          12396,
+          2170
+        ],
+        [
+          6713,
+          19069,
+          7740
+        ],
+        [
+          7965,
+          22713,
+          138501
+        ]
+      ],
+      "segundos_entrenamiento": 2.3
+    },
+    "regresion_logistica": {
+      "accuracy": 0.8352,
+      "f1_macro": 0.703,
+      "por_clase": {
+        "negativo": {
+          "precision": 0.7933,
+          "recall": 0.8089,
+          "f1": 0.801,
+          "soporte": 53096
+        },
+        "neutral": {
+          "precision": 0.4972,
+          "recall": 0.3235,
+          "f1": 0.392,
+          "soporte": 33522
+        },
+        "positivo": {
+          "precision": 0.8889,
+          "recall": 0.9449,
+          "f1": 0.916,
+          "soporte": 169179
+        }
+      },
+      "matriz_confusion": [
+        [
+          42948,
+          4891,
+          5257
+        ],
+        [
+          7945,
+          10846,
+          14731
+        ],
+        [
+          3243,
+          6079,
+          159857
+        ]
+      ],
+      "segundos_entrenamiento": 21.7
+    }
+  },
+  "mejor_modelo": "regresion_logistica",
+  "ruta_modelo": "/data/modelos/sentimiento",
+  "num_features": 32768,
+  "fecha_corte_entrenamiento": "2021-01-19",
+  "version_modelo": "2371b1b833",
+  "segundos": 121.7
+}

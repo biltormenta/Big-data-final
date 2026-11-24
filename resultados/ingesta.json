@@ -1,0 +1,36 @@
+{
+  "area": "Philadelphia (PA)",
+  "familia": "Restaurants",
+  "fecha_corte": "2022-01-19",
+  "negocios": {
+    "leidos": 150346,
+    "coordenadas_nulas": 0,
+    "fuera_de_rango": 0,
+    "sin_categorias": 103,
+    "duplicados": 0,
+    "limpios": 150243,
+    "en_el_area": 44807,
+    "en_area_y_familia": 16944,
+    "sin_resenas_tras_limpieza": 0,
+    "finales": 16944
+  },
+  "resenas": {
+    "leidas": 6990280,
+    "sin_negocio": 689,
+    "fuera_area": 5668997,
+    "sin_texto": 0,
+    "invalida": 0,
+    "duplicada": 0,
+    "validas": 1320594
+  },
+  "distribucion_sentimiento": {
+    "neutral": 166106,
+    "positivo": 872463,
+    "negativo": 282025
+  },
+  "cargados_en_mongo": {
+    "negocios": 16944,
+    "resenas": 1320594
+  },
+  "segundos": 766.1
+}

@@ -1,0 +1,228 @@
+{
+  "min_dias_negocio": 100000,
+  "particiones": 8,
+  "coincide_con_groupby": {
+    "categoria": true,
+    "celda": true
+  },
+  "global": {
+    "negocios": 16944,
+    "cierres": 5753,
+    "dias_negocio": 43427205,
+    "tasa_cierre_pct": 4.8353
+  },
+  "categorias": {
+    "total": 113,
+    "confiables": 33,
+    "mayor_tasa": [
+      {
+        "categoria": "Barbeque",
+        "negocios": 113,
+        "cierres": 59,
+        "dias_negocio": 198443,
+        "tasa_cierre_pct": 10.852,
+        "ic95_inf": 8.261,
+        "ic95_sup": 13.9983
+      },
+      {
+        "categoria": "Vegetarian",
+        "negocios": 93,
+        "cierres": 54,
+        "dias_negocio": 185458,
+        "tasa_cierre_pct": 10.6277,
+        "ic95_inf": 7.9839,
+        "ic95_sup": 13.8669
+      },
+      {
+        "categoria": "Indian",
+        "negocios": 211,
+        "cierres": 111,
+        "dias_negocio": 383035,
+        "tasa_cierre_pct": 10.5774,
+        "ic95_inf": 8.7014,
+        "ic95_sup": 12.7379
+      },
+      {
+        "categoria": "Cafes",
+        "negocios": 134,
+        "cierres": 62,
+        "dias_negocio": 222892,
+        "tasa_cierre_pct": 10.1529,
+        "ic95_inf": 7.7842,
+        "ic95_sup": 13.0156
+      },
+      {
+        "categoria": "Sushi Bars",
+        "negocios": 54,
+        "cierres": 27,
+        "dias_negocio": 107231,
+        "tasa_cierre_pct": 9.1904,
+        "ic95_inf": 6.0566,
+        "ic95_sup": 13.3716
+      },
+      {
+        "categoria": "Mediterranean",
+        "negocios": 115,
+        "cierres": 51,
+        "dias_negocio": 217278,
+        "tasa_cierre_pct": 8.5674,
+        "ic95_inf": 6.379,
+        "ic95_sup": 11.2645
+      },
+      {
+        "categoria": "Desserts",
+        "negocios": 57,
+        "cierres": 26,
+        "dias_negocio": 111009,
+        "tasa_cierre_pct": 8.5489,
+        "ic95_inf": 5.5844,
+        "ic95_sup": 12.5261
+      },
+      {
+        "categoria": "Vietnamese",
+        "negocios": 103,
+        "cierres": 49,
+        "dias_negocio": 211565,
+        "tasa_cierre_pct": 8.4537,
+        "ic95_inf": 6.2541,
+        "ic95_sup": 11.1762
+      }
+    ],
+    "menor_tasa": [
+      {
+        "categoria": "Delis",
+        "negocios": 276,
+        "cierres": 60,
+        "dias_negocio": 832068,
+        "tasa_cierre_pct": 2.632,
+        "ic95_inf": 2.0085,
+        "ic95_sup": 3.3879
+      },
+      {
+        "categoria": "Bakeries",
+        "negocios": 211,
+        "cierres": 56,
+        "dias_negocio": 705391,
+        "tasa_cierre_pct": 2.8977,
+        "ic95_inf": 2.1889,
+        "ic95_sup": 3.7629
+      },
+      {
+        "categoria": "Coffee & Tea",
+        "negocios": 600,
+        "cierres": 143,
+        "dias_negocio": 1583070,
+        "tasa_cierre_pct": 3.2971,
+        "ic95_inf": 2.7788,
+        "ic95_sup": 3.8839
+      },
+      {
+        "categoria": "Chinese",
+        "negocios": 1141,
+        "cierres": 306,
+        "dias_negocio": 3331264,
+        "tasa_cierre_pct": 3.3528,
+        "ic95_inf": 2.9876,
+        "ic95_sup": 3.7503
+      },
+      {
+        "categoria": "Pizza",
+        "negocios": 2989,
+        "cierres": 821,
+        "dias_negocio": 8462526,
+        "tasa_cierre_pct": 3.5411,
+        "ic95_inf": 3.303,
+        "ic95_sup": 3.7918
+      }
+    ]
+  },
+  "celdas": {
+    "total": 390,
+    "confiables": 123,
+    "mayor_tasa": [
+      {
+        "celda": "dr46b",
+        "negocios": 60,
+        "cierres": 29,
+        "dias_negocio": 122707,
+        "tasa_cierre_pct": 8.6262,
+        "ic95_inf": 5.7771,
+        "ic95_sup": 12.3887,
+        "resenas": 3981,
+        "pct_negativas": 25.62
+      },
+      {
+        "celda": "dr47b",
+        "negocios": 48,
+        "cierres": 25,
+        "dias_negocio": 110139,
+        "tasa_cierre_pct": 8.285,
+        "ic95_inf": 5.3616,
+        "ic95_sup": 12.2303,
+        "resenas": 3365,
+        "pct_negativas": 18.51
+      },
+      {
+        "celda": "dr4s4",
+        "negocios": 100,
+        "cierres": 46,
+        "dias_negocio": 227086,
+        "tasa_cierre_pct": 7.3937,
+        "ic95_inf": 5.4131,
+        "ic95_sup": 9.8621,
+        "resenas": 6264,
+        "pct_negativas": 27.28
+      },
+      {
+        "celda": "dr4e8",
+        "negocios": 275,
+        "cierres": 130,
+        "dias_negocio": 649993,
+        "tasa_cierre_pct": 7.3001,
+        "ic95_inf": 6.0992,
+        "ic95_sup": 8.6683,
+        "resenas": 29773,
+        "pct_negativas": 22.47
+      },
+      {
+        "celda": "dr4e6",
+        "negocios": 609,
+        "cierres": 276,
+        "dias_negocio": 1401664,
+        "tasa_cierre_pct": 7.1872,
+        "ic95_inf": 6.3642,
+        "ic95_sup": 8.087,
+        "resenas": 92360,
+        "pct_negativas": 16.68
+      }
+    ],
+    "mayor_pct_negativas": [
+      {
+        "celda": "dr4sn",
+        "pct_negativas": 35.81,
+        "resenas": 7492
+      },
+      {
+        "celda": "dr4u8",
+        "pct_negativas": 33.96,
+        "resenas": 5377
+      },
+      {
+        "celda": "dr47j",
+        "pct_negativas": 32.49,
+        "resenas": 5768
+      },
+      {
+        "celda": "dr4kn",
+        "pct_negativas": 31.58,
+        "resenas": 6960
+      },
+      {
+        "celda": "dr4de",
+        "pct_negativas": 30.06,
+        "resenas": 5163
+      }
+    ]
+  },
+  "segundos": 17.6
+}

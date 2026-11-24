@@ -1,4 +1,4 @@
-# LifeMap · Entrega 1
+# LifeMap · Entregas 1 y 2
 
 Plataforma batch con el Yelp Open Dataset: ingesta y limpieza con Dask, negocios como GeoJSON en MongoDB, sentimiento de las reseñas con Spark MLlib, tasas de cierre anualizadas con MapReduce (`reduceByKey`), balanceo de carga y una API Flask con consultas geoespaciales. Todo corre con un solo `docker-compose.yml` y lo despliega Jenkins.
 
@@ -143,3 +143,73 @@ Repositorio: https://github.com/biltormenta/Big-data-final
 - Los tiempos del balanceo dependen de la máquina (aquí: un worker de Spark con 2 núcleos); sirven para comparar configuraciones entre sí, no como medida absoluta.
 
 Fuente de datos: [Yelp Open Dataset](https://www.kaggle.com/datasets/yelp-dataset/yelp-dataset), usado según sus términos para fines académicos.
+
+---
+
+# Entrega 2: streaming, supervivencia y alerta temprana de cierre
+
+Se monta sobre la Entrega 1 (mismo `docker-compose.yml`, misma base MongoDB, misma API y mismo Jenkins). Agrega Kafka en modo KRaft, un job de Spark Structured Streaming, curvas de supervivencia, un modelo de riesgo de cierre y un panel en vivo.
+
+## Flujo
+
+```
+productor (reloj acelerado) ─► Kafka: topic reviews (3 particiones, clave business_id)
+                                   │
+                        Spark Structured Streaming (streaming_resenas.py)
+                        · carga los modelos versionados (sentimiento y riesgo) sin reentrenar
+                        ├─ consulta A: clasifica cada reseña ─► resenas_stream  +  riesgo de los negocios afectados ─► alerts
+                        └─ consulta B: ventanas de 30 días por celda de geohash (watermark 7 días) ─► ventanas (hotspots)
+                                   │
+                          MongoDB ─► API (/live/hotspots, /alerts, /survival, /risk/near) ─► /dashboard
+```
+
+**Corte T = 2021-01-19** (12 meses antes de la última reseña del dataset, 2022-01-19). Todo lo posterior a T se reserva para el streaming: el modelo de sentimiento se reentrena una vez solo con reseñas hasta T y el de riesgo usa variables calculadas hasta T. Ambos modelos se guardan con una **huella** (`version.json`); el streaming comprueba que lo que carga es exactamente lo versionado.
+
+## Cómo correrlo
+
+Requiere la Entrega 1 ya cargada (`ejecutar_todo.ps1`). Después, en Windows, doble clic en `ejecutar_entrega2.bat` (o `.\ejecutar_entrega2.ps1`; con `-SegPorMes 3` el productor va más rápido). Hace todo en orden:
+
+```bash
+docker compose up -d --build --wait mongo kafka dask-scheduler dask-worker spark-master spark-worker api
+for job in sentimiento umbral_hotspot supervivencia_job riesgo_modelo; do        # entrenamiento (unos 10 min en total)
+  docker compose exec -T spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077     --conf spark.driver.host=spark-master --driver-memory 1g --executor-memory 1800m /opt/jobs/$job.py
+done
+docker compose --profile streaming up -d streaming        # el job de streaming (queda corriendo)
+SEG_POR_MES=10 docker compose --profile jobs run --rm productor    # publica 12 meses de reseñas en 2 minutos
+```
+
+Mientras corre el productor, abrir `http://localhost:5000/dashboard`: mapa de hotspots, alertas activas, curvas de supervivencia y evolución del % negativo, actualizándose cada 5 segundos.
+
+## Endpoints nuevos
+
+| Endpoint | Qué hace | Parámetros |
+|---|---|---|
+| `GET /live/hotspots` | Celdas de una ventana de 30 días en hotspot, con su polígono | `ventana` (fecha de inicio o `ultima`), `lat`, `lon`, `radio`, `todas`, `limit` |
+| `GET /alerts` · `POST /alerts` | Alertas activas por radio, o dentro de un polígono GeoJSON (POST) | `lat`, `lon`, `radio`, `min_prob`, `todas`, `limit` |
+| `GET /survival/<categoria>` | Curva de Kaplan-Meier con número en riesgo (`TODAS` = todos los negocios) | `zona` (geohash) para la curva de una zona |
+| `GET /risk/near` | Negocios cerca de un punto con su probabilidad de cierre | `lat`, `lon`, `radio`, `min_prob`, `limit` |
+| `GET /health` | Ahora incluye Kafka y el retraso del consumidor (mensajes sin procesar) | |
+| `GET /dashboard` | Panel en vivo con las cuatro visualizaciones | |
+
+Extras: `GET /survival` (lista de curvas), `GET /live/evolucion` y `GET /live/estado`. Para Power BI ver `Guia_PowerBI_LifeMap.docx` (en 1_ENTREGABLES) (consultas listas para pegar).
+
+## Decisiones
+
+| Tema | Decisión |
+|---|---|
+| Productor | Publica solo lo posterior a T, en orden de fecha, con clave `business_id`; `SEG_POR_MES` = segundos reales por mes de reseñas (10 por defecto) |
+| Ventanas | 30 días, watermark de 7 días sobre `date` (tiempo del evento), alineadas para que una empiece en T; se guardan con el polígono de su celda |
+| Hotspot | El % de reseñas negativas sube ≥ **13,9 puntos** frente a la ventana anterior, con ≥ 30 reseñas en las dos. El umbral es el percentil 95 del cambio normal entre ventanas antes de T (`umbral_hotspot.py`) |
+| Supervivencia | Kaplan-Meier propio (`app/supervivencia.py`): censura (negocio abierto) y entrada tardía (Yelp exige ≥ 5 reseñas: un negocio es observable desde su 5.ª); solo se usa donde hay ≥ 30 en riesgo; grupos < 100 negocios o < 10 cierres se marcan «pequeños» |
+| Riesgo | Variables hasta T (sentimiento, tendencia del % negativo a 6 meses, estrellas, n.º de reseñas, edad, días desde la última, actividad 6 m, cambio de estrellas, competidores a 500 m con `$geoNear`); etiqueta a 12 meses; validación cruzada de 5 pliegues para elegir modelo y umbral y prueba usada una sola vez; métricas AUC-ROC, AUC-PR y recall |
+| Alertas | `foreachBatch`: cada micro-lote actualiza el estado de los negocios afectados (sin releer su historia), los puntúa y deja en `alerts` los que superan el umbral |
+
+## Pruebas y Jenkins
+
+- Unitarias (`tests/unit`): Kaplan-Meier contra casos calculados a mano (censura y entrada tardía), variables de riesgo sin fuga de lo posterior a T, estado incremental = recálculo completo, regla de hotspot, versionado de modelos.
+- Contra la API (`tests/smoke/test_api.py`): los endpoints nuevos con datos sintéticos.
+- **Prueba de humo del flujo** (`tests/humo_streaming.sh`): publica 100 mensajes en un topic de prueba y verifica que quedan clasificados en MongoDB, agregados en ventanas con geometría y con el riesgo actualizado, que el modelo cargado tiene la huella de su `version.json` y que el topic tiene 3 particiones. Corre en la pila de pruebas de Jenkins (etapa «Prueba del flujo de streaming y del modelo versionado»); si falla, no se despliega.
+
+## Limitaciones
+
+La vida de un negocio sigue siendo aproximada; el modelo de riesgo es modesto (pocos cierres en la prueba); las alertas dependen de la velocidad de reproducción; el `.pbix` de Power BI se arma con la guía (no se puede generar por código).
