@@ -16,6 +16,7 @@ def sesion(nombre):
              .config("spark.mongodb.read.connection.uri", URI)
              .config("spark.mongodb.write.connection.uri", URI)
              .config("spark.sql.shuffle.partitions", "16")
+             .config("spark.sql.session.timeZone", "UTC")
              .getOrCreate())
     spark.sparkContext.setLogLevel("WARN")
     return spark
