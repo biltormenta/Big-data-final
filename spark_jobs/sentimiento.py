@@ -10,6 +10,7 @@ from pyspark.sql import functions as F
 
 from comun import DB, RESENAS, URI, guardar_json, sesion
 from app import config
+from app.versiones import escribir_version
 
 # fraccion del entrenamiento que se usa (1.0 = todo); se baja si la maquina se queda corta de memoria
 FRACCION = float(os.getenv("FRACCION_ENTRENO", "1.0"))
@@ -18,7 +19,13 @@ NUM_FEATURES = 2 ** 15
 spark = sesion("lifemap-sentimiento")
 t0 = time.time()
 
-df = (spark.read.parquet(RESENAS).select("business_id", "text", "sentimiento")
+# entrega 2: si hay FECHA_T solo se entrena con resenas hasta esa fecha; lo posterior se reserva para el streaming
+FECHA_T = os.getenv("FECHA_T")
+base = spark.read.parquet(RESENAS).select("business_id", "text", "sentimiento", "date")
+if FECHA_T:
+    base = base.filter(F.col("date") <= F.lit(FECHA_T).cast("timestamp"))
+    print("entrenando solo con resenas hasta", FECHA_T)
+df = (base.select("business_id", "text", "sentimiento")
       .withColumn("label", F.when(F.col("sentimiento") == "negativo", 0.0)
                            .when(F.col("sentimiento") == "neutral", 1.0).otherwise(2.0)))
 
@@ -102,6 +109,10 @@ mejor = max(resultados, key=lambda k: resultados[k]["f1_macro"])
 for nombre, m in modelos.items():
     PipelineModel(stages=features.stages + [m]).write().overwrite().save(config.RUTA_MODELO + "_" + nombre)
 PipelineModel(stages=features.stages + [modelos[mejor]]).write().overwrite().save(config.RUTA_MODELO)
+# version.json: huella de lo guardado; el streaming comprueba que lo que carga es exactamente esto
+version = escribir_version(config.RUTA_MODELO, {"modelo": mejor, "fecha_t": FECHA_T, "f1_macro": resultados[mejor]["f1_macro"],
+                                                  "entrenado_en": time.strftime("%Y-%m-%d %H:%M:%S")})
+print("version del modelo de sentimiento:", version["version"])
 
 salida = {
     "particion": "por negocio (hash de business_id: 80 % train, 20 % test)",
@@ -110,7 +121,8 @@ salida = {
     "distribucion_train": dist_train, "distribucion_test": dist,
     "clase_mayoritaria": mayoritaria, "accuracy_clase_mayoritaria": base,
     "modelos": resultados, "mejor_modelo": mejor, "ruta_modelo": config.RUTA_MODELO,
-    "num_features": NUM_FEATURES, "segundos": round(time.time() - t0, 1),
+    "num_features": NUM_FEATURES, "fecha_corte_entrenamiento": FECHA_T, "version_modelo": version["version"],
+    "segundos": round(time.time() - t0, 1),
 }
 guardar_json("sentimiento.json", salida)
 MongoClient(URI)[DB][config.COL_METRICAS].replace_one({"_id": "sentimiento"}, {"_id": "sentimiento", **salida}, upsert=True)
