@@ -126,12 +126,19 @@ def verificar(n):
     aciertos = sum(1 for d in docs if d["sentimiento"] == ("positivo" if d["stars"] == 5 else "negativo"))
     assert aciertos >= 0.9 * n, f"el modelo de juguete acerto solo {aciertos} de {n}"
 
-    # ventanas por celda con su geometria
+    # las ventanas las escribe otra consulta del streaming y puede ir un poco atras: se espera a que sumen los n mensajes
+    limite = time.time() + 180
+    while time.time() < limite and sum(x["n"] for x in db[config.COL_VENTANAS].find({})) < n:
+        time.sleep(3)
     v = list(db[config.COL_VENTANAS].find({}))
+    # ventanas por celda con su geometria
     assert v and all(x["celda"] == GH and x["geom"]["type"] == "Polygon" and x["n"] > 0 for x in v), "faltan ventanas con geometria"
     assert sum(x["n"] for x in v) == n, f"las ventanas suman {sum(x['n'] for x in v)} y deberian sumar {n}"
 
     # el riesgo de los negocios afectados se actualizo en el flujo
+    limite = time.time() + 120
+    while time.time() < limite and db[config.COL_RIESGO].count_documents({"actualizado_en": {"$exists": True}}) < len(NEGOCIOS):
+        time.sleep(3)
     actualizados = db[config.COL_RIESGO].count_documents({"actualizado_en": {"$exists": True}})
     assert actualizados == len(NEGOCIOS), f"se actualizaron {actualizados} de {len(NEGOCIOS)} negocios"
 
